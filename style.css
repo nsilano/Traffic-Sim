@@ -1,7 +1,8 @@
-/* Layout: a control-room console — the intersection map is the screen, the HUD sits above it like a dispatcher's readout. */
+/* Layout: a control-room console — the intersection map is the screen, readouts above, the signal switchboard below. */
 :root {
   --bg: #161b21;        /* console housing */
   --panel: #222932;     /* readout panels */
+  --panel-hi: #2b333d;
   --line: #33404c;
   --fg: #e8edf2;
   --muted: #8d9aa7;
@@ -54,18 +55,19 @@ h1 {
 
 h1 span { color: var(--amber); }
 
-.post {
+.post, .label, .eyebrow {
   font-family: var(--font-data);
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
+.post { font-size: 0.75rem; }
+
 /* ---- Readouts ---- */
 .hud {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.5fr repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -75,24 +77,48 @@ h1 span { color: var(--amber); }
   border-radius: 6px;
   padding: 8px 12px;
   min-width: 0;
+  position: relative;
 }
 
-.label {
-  display: block;
-  font-family: var(--font-data);
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
+.label { display: block; font-size: 0.68rem; }
 
 .value {
   display: block;
   font-family: var(--font-data);
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value.small {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+#stat-crashes[data-level="warn"] { color: var(--amber); }
+#stat-crashes[data-level="bad"] { color: var(--stop); }
+
+.goal-bar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: var(--bg);
+  border-radius: 0 0 6px 6px;
+  overflow: hidden;
+}
+
+.goal-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--amber);
+  transition: width 0.3s;
 }
 
 .patience {
@@ -144,11 +170,8 @@ h1 span { color: var(--amber); }
   display: block;
   width: 100%;
   height: 100%;
-  cursor: pointer;
   touch-action: manipulation;
 }
-
-#board:focus-visible { outline: 3px solid var(--amber); outline-offset: -3px; }
 
 .rush {
   position: absolute;
@@ -179,7 +202,8 @@ h1 span { color: var(--amber); }
 }
 
 .card {
-  max-width: 400px;
+  width: 100%;
+  max-width: 420px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-top: 4px solid var(--amber);
@@ -193,51 +217,157 @@ h1 span { color: var(--amber); }
   margin: 0;
   font-size: 1.4rem;
   font-weight: 800;
+  line-height: 1.2;
   text-wrap: balance;
 }
 
-#overlay-body { display: grid; gap: 8px; }
-
-.card p { margin: 0; color: var(--fg); }
-.card p + p { color: var(--muted); }
+.card p { margin: 0; }
+.card .muted { color: var(--muted); }
 .card strong { color: var(--amber); font-variant-numeric: tabular-nums; }
+.eyebrow { margin: 0; font-size: 0.7rem; }
+.goal { padding-top: 2px; }
 
-/* ---- Controls ---- */
-.controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: stretch;
+  padding-top: 4px;
 }
 
-.signal {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 8px 12px;
-  display: flex;
+.card-actions .primary { flex: 1 1 160px; }
+
+.level-list { display: grid; gap: 6px; }
+
+.level-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  min-width: 0;
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 400;
 }
 
-.lamp {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--stop);
-  box-shadow: 0 0 10px var(--stop);
-}
+.level-row:not(:disabled):hover { background: var(--panel-hi); border-color: var(--amber); }
 
-.signal[data-light="green"] .lamp { background: var(--go); box-shadow: 0 0 10px var(--go); }
-.signal[data-light="yellow"] .lamp { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
-
-.signal-state {
-  display: block;
+.level-num {
   font-family: var(--font-data);
   font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--amber);
+  text-align: center;
 }
+
+.level-row:disabled .level-num { color: var(--muted); }
+
+.level-info { display: grid; min-width: 0; }
+.level-name { font-weight: 800; }
+.level-desc { font-size: 0.78rem; color: var(--muted); }
+
+.level-status {
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.level-status[data-done="true"] { color: var(--go); }
+
+/* ---- Signal switchboard ---- */
+.controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.controls[data-count="6"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.controls[data-count="8"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.sig {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 4px 10px;
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 400;
+  min-width: 0;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.sig .lamp {
+  grid-row: 1 / 3;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--stop);
+  box-shadow: 0 0 12px rgba(229, 72, 77, 0.55);
+  color: var(--bg);
+}
+
+.sig .lamp svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sig[data-light="green"] .lamp { background: var(--go); box-shadow: 0 0 14px rgba(48, 192, 112, 0.6); }
+.sig[data-light="yellow"] .lamp { background: var(--amber); box-shadow: 0 0 14px rgba(242, 169, 31, 0.6); }
+.sig[data-light="green"] { border-color: rgba(48, 192, 112, 0.6); }
+
+/* Six or eight switches: stack lamp over label so names fit. */
+.controls[data-count="6"] .sig,
+.controls[data-count="8"] .sig {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  text-align: center;
+}
+
+.controls[data-count="6"] .sig .lamp,
+.controls[data-count="8"] .sig .lamp { grid-row: auto; }
+
+.sig-text { display: grid; min-width: 0; }
+.sig-label { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sig-sub { font-size: 0.75rem; color: var(--muted); line-height: 1.3; }
+
+.sig-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 1.2rem;
+}
+
+.warn {
+  display: none;
+  font-family: var(--font-data);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--stop);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.sig[data-unsafe="true"] .warn { display: inline-block; }
+.sig[data-unsafe="true"] { border-color: rgba(229, 72, 77, 0.6); }
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.toolbar button { flex: 1; }
 
 button {
   font: inherit;
@@ -251,19 +381,12 @@ button {
 }
 
 button:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
-button:disabled { opacity: 0.45; cursor: default; }
+button:disabled { opacity: 0.5; cursor: default; }
 
 .primary {
   background: var(--amber);
   border-color: var(--amber);
   color: var(--bg);
-}
-
-.switch {
-  grid-column: 1 / -1;
-  font-size: 1.1rem;
-  padding: 14px 16px;
-  letter-spacing: 0.02em;
 }
 
 .hint {
@@ -274,7 +397,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 kbd {
   font-family: var(--font-data);
-  font-size: 0.8em;
+  font-size: 0.75em;
   border: 1px solid var(--line);
   border-bottom-width: 2px;
   border-radius: 4px;
@@ -282,14 +405,22 @@ kbd {
   color: var(--fg);
 }
 
+@media (max-width: 600px) {
+  .controls[data-count="6"], .controls[data-count="8"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hud { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .level-readout { grid-column: 1 / -1; }
+}
+
 @media (max-width: 460px) {
-  .controls { grid-template-columns: 1fr 1fr; }
-  #pause-btn { grid-column: 1 / -1; }
-  .value { font-size: 1.15rem; }
+  .value { font-size: 1.05rem; }
+  .sig { padding: 8px; gap: 2px 8px; }
+  .sig .lamp { width: 28px; height: 28px; }
+  .sig-meta kbd { display: none; }
   .card { padding: 14px 16px; gap: 8px; font-size: 0.85rem; line-height: 1.4; }
   .card h2 { font-size: 1.15rem; }
+  .level-desc { font-size: 0.72rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bar-fill { transition: none; }
+  .bar-fill, .goal-bar span, .sig { transition: none; }
 }

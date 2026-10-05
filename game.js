@@ -1,183 +1,437 @@
-// Intersection Control — a basic traffic-light game.
-// One north–south street crosses one east–west street; each street has
-// two lanes (one per direction). The player switches which street has green.
+// Intersection Control — run the signals at a city intersection.
+// Each level defines the lanes on both streets and the signal groups the
+// player controls. Signals do not protect the player: giving green to two
+// conflicting groups lets cars drive into each other.
 (() => {
   'use strict';
 
   // ---- World geometry (logical canvas units) ----
-  const W = 640, H = 640, CX = W / 2, CY = H / 2;
-  const ROAD_HALF = 40;          // each street is 80 wide: two 40-wide lanes
-  const LANE_OFF = 20;           // lane centre offset from street centre
+  const W = 640, H = 640, CX = W / 2, CY = H / 2, HALF = W / 2;
+  const LANE_W = 26;
   const SIDEWALK = 16;
   const CROSSWALK = 18;
-  const SPAWN_PAD = 40;          // cars spawn this far off-screen
-
-  // Distance along a lane path, measured to a car's front bumper.
-  const ENTRY_S = (W / 2 + SPAWN_PAD) - ROAD_HALF; // front reaches intersection
-  const EXIT_S = ENTRY_S + ROAD_HALF * 2;          // front leaves intersection
-  const STOP_S = ENTRY_S - CROSSWALK - 4;          // stop line
-  const PATH_LEN = W + SPAWN_PAD * 2;
+  const STOP_GAP = 6;            // space between stop line and crosswalk
+  const PAD = 40;                // cars spawn this far off-screen
 
   // ---- Tuning ----
-  const YELLOW_TIME = 2.2;
-  const ALL_RED_TIME = 1.4;
-  const ANGRY_AFTER = 8;         // seconds stopped before a driver starts honking
-  const ACCEL = 160, BRAKE = 260, HARD_BRAKE = 520, MIN_GAP = 9;
-  const DRAIN_PER_ANGRY = 2.5;   // patience lost per second per honking driver
-  const DRAIN_PER_BLOCKED = 4;   // per second per lane backed up off-screen
-  const REFILL_PER_CAR = 1;
+  const YELLOW_TIME = 2.5;
+  const ACCEL = 150, BRAKE = 260, HARD_BRAKE = 520, MIN_GAP = 8;
+  const TURN_SPEED = { L: 62, R: 38 };
+  const DRAIN_PER_ANGRY = 1.6;   // patience lost per second per honking driver
+  const DRAIN_PER_BLOCKED = 4;   // per second per approach backed up off-screen
+  const REFILL_PER_CAR = 1.2;
+  const CRASH_PATIENCE = 12;
+  const MAX_CRASHES = 3;
+  const CONFLICT_DIST = 15;      // path centrelines closer than this can collide
+  const WRECK_TIME = 5;
 
-  // Each approach is described by its travel direction. `pos(s)` maps the
-  // distance along the path to a screen point; `angle` is the heading.
-  const APPROACHES = {
-    N: { axis: 'NS', name: 'Northbound', angle: -Math.PI / 2, pos: s => ({ x: CX + LANE_OFF, y: H + SPAWN_PAD - s }) },
-    S: { axis: 'NS', name: 'Southbound', angle: Math.PI / 2, pos: s => ({ x: CX - LANE_OFF, y: -SPAWN_PAD + s }) },
-    E: { axis: 'EW', name: 'Eastbound', angle: 0, pos: s => ({ x: -SPAWN_PAD + s, y: CY + LANE_OFF }) },
-    W: { axis: 'EW', name: 'Westbound', angle: Math.PI, pos: s => ({ x: W + SPAWN_PAD - s, y: CY - LANE_OFF }) },
+  // Travel directions. `d` is the heading; `r` points to the driver's right.
+  const DIRS = {
+    N: { name: 'Northbound', d: { x: 0, y: -1 }, road: 'NS' },
+    S: { name: 'Southbound', d: { x: 0, y: 1 }, road: 'NS' },
+    E: { name: 'Eastbound', d: { x: 1, y: 0 }, road: 'EW' },
+    W: { name: 'Westbound', d: { x: -1, y: 0 }, road: 'EW' },
   };
-  const KEYS = Object.keys(APPROACHES);
+  for (const k in DIRS) {
+    const d = DIRS[k].d;
+    DIRS[k].r = { x: -d.y, y: d.x };
+  }
+  const DIR_KEYS = Object.keys(DIRS);
+  const LEFT_OF = { N: 'W', W: 'S', S: 'E', E: 'N' };
+  const RIGHT_OF = { N: 'E', E: 'S', S: 'W', W: 'N' };
+
+  // ---- Levels ----
+  // Lane specs list a road's lanes in one direction, inner lane first:
+  // L = left-turn lane, T = straight, TR = straight or right.
+  const LEVELS = [
+    {
+      name: 'First Shift', street: 'Main St & 1st Ave',
+      lanes: { NS: ['TR'], EW: ['TR'] },
+      groups: [
+        { label: 'Main St', dirs: ['N', 'S'], move: 'T' },
+        { label: '1st Ave', dirs: ['E', 'W'], move: 'T' },
+      ],
+      goal: 20, rate: { NS: [0.13, 0.2], EW: [0.13, 0.2] }, left: 0, right: 0.15, angry: 9, rush: false,
+      intro: 'Each street has its own switch. Turn one street red before you turn the other green. If both are green, cars will crash.',
+      tip: 'After you switch a street off, wait for the yellow to end and for the last cars to clear the box.',
+    },
+    {
+      name: 'Turn Lanes', street: 'Main St & 1st Ave',
+      lanes: { NS: ['L', 'TR'], EW: ['L', 'TR'] },
+      groups: [
+        { label: 'Main St', dirs: ['N', 'S'], move: 'T' },
+        { label: 'Main St', dirs: ['N', 'S'], move: 'L' },
+        { label: '1st Ave', dirs: ['E', 'W'], move: 'T' },
+        { label: '1st Ave', dirs: ['E', 'W'], move: 'L' },
+      ],
+      goal: 30, rate: { NS: [0.14, 0.22], EW: [0.14, 0.22] }, left: 0.3, right: 0.12, angry: 15, rush: false,
+      intro: 'Both streets now have a left-turn lane with its own arrow. Opposite left turns can go at the same time. A left arrow cannot run with the same street’s straight traffic.',
+      tip: 'A button marked Unsafe would conflict with traffic that is still moving.',
+    },
+    {
+      name: 'Main St Widens', street: 'Main St & 2nd Ave',
+      lanes: { NS: ['L', 'T', 'TR'], EW: ['L', 'TR'] },
+      groups: [
+        { label: 'Main St', dirs: ['N', 'S'], move: 'T' },
+        { label: 'Main St', dirs: ['N', 'S'], move: 'L' },
+        { label: '2nd Ave', dirs: ['E', 'W'], move: 'T' },
+        { label: '2nd Ave', dirs: ['E', 'W'], move: 'L' },
+      ],
+      goal: 45, rate: { NS: [0.22, 0.32], EW: [0.12, 0.2] }, left: 0.25, right: 0.12, angry: 15, rush: false,
+      intro: 'Main St gets a second through lane and much more traffic. 2nd Ave is quieter, but its drivers still lose patience.',
+      tip: 'Give Main St longer greens and keep the side street’s turns short.',
+    },
+    {
+      name: 'Split Phases', street: 'Main St & 3rd Ave',
+      lanes: { NS: ['L', 'T', 'TR'], EW: ['L', 'T', 'TR'] },
+      groups: [
+        { label: 'Northbound', dirs: ['N'], move: 'T' },
+        { label: 'Northbound', dirs: ['N'], move: 'L' },
+        { label: 'Southbound', dirs: ['S'], move: 'T' },
+        { label: 'Southbound', dirs: ['S'], move: 'L' },
+        { label: '3rd Ave', dirs: ['E', 'W'], move: 'T' },
+        { label: '3rd Ave', dirs: ['E', 'W'], move: 'L' },
+      ],
+      goal: 60, rate: { NS: [0.24, 0.34], EW: [0.18, 0.26] }, left: 0.28, right: 0.12, angry: 16, rush: true,
+      intro: 'Northbound and southbound Main St have separate controls now. One direction’s straight and left can run together, which clears a long queue quickly. Rush-hour surges start here.',
+      tip: 'Northbound straight with northbound left is safe. Northbound left with southbound straight is not.',
+    },
+    {
+      name: 'Downtown Rush', street: 'Main St & Broadway',
+      lanes: { NS: ['L', 'T', 'T', 'TR'], EW: ['L', 'T', 'TR'] },
+      groups: [
+        { label: 'Northbound', dirs: ['N'], move: 'T' },
+        { label: 'Northbound', dirs: ['N'], move: 'L' },
+        { label: 'Southbound', dirs: ['S'], move: 'T' },
+        { label: 'Southbound', dirs: ['S'], move: 'L' },
+        { label: 'Eastbound', dirs: ['E'], move: 'T' },
+        { label: 'Eastbound', dirs: ['E'], move: 'L' },
+        { label: 'Westbound', dirs: ['W'], move: 'T' },
+        { label: 'Westbound', dirs: ['W'], move: 'L' },
+      ],
+      goal: 80, rate: { NS: [0.3, 0.42], EW: [0.22, 0.3] }, left: 0.28, right: 0.12, angry: 16, rush: true,
+      intro: 'Every direction and every turn has its own signal. Eight switches, heavy traffic, and frequent rush-hour surges.',
+      tip: 'Some combinations across streets are safe too. Watch the Unsafe labels to find them.',
+    },
+  ];
 
   const CAR_COLORS = ['#e8eef3', '#2c3e57', '#b8372f', '#d6a12b', '#4c7a5a', '#8a96a3', '#1f2328', '#3d6fb0', '#c96b2c'];
   const TRUCK_COLORS = ['#f0f0ea', '#c9cdd1', '#5a6470'];
+  const LIGHT_COLOR = { red: '#e5484d', yellow: '#f2a91f', green: '#30c070' };
+
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const expRand = mean => -Math.log(1 - Math.random()) * mean;
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- Geometry ----
+  function buildGeometry(level) {
+    const half = { NS: level.lanes.NS.length * LANE_W, EW: level.lanes.EW.length * LANE_W };
+    // `cross` is how far the box extends along a direction; `self` is the
+    // half-width of the road that direction travels on.
+    const ext = k => {
+      const road = DIRS[k].road;
+      return { cross: half[road === 'NS' ? 'EW' : 'NS'], self: half[road] };
+    };
+    const paths = [];
+    const lamps = [];
+    for (const k of DIR_KEYS) {
+      const spec = level.lanes[DIRS[k].road];
+      spec.forEach((laneSpec, i) => {
+        for (const move of laneSpec.split('')) {
+          const p = buildPath(level, k, i, move, ext);
+          p.group = level.groups.findIndex(g => g.dirs.includes(k) && (g.move === 'L') === (move === 'L'));
+          paths.push(p);
+        }
+        const { d, r } = DIRS[k];
+        const e = ext(k);
+        const u = -e.cross - CROSSWALK - STOP_GAP + 9, v = LANE_W * (i + 0.5);
+        const kind = laneSpec === 'L' ? 'L' : 'T';
+        lamps.push({
+          dir: k, lane: i, u, v, kind,
+          x: CX + d.x * u + r.x * v, y: CY + d.y * u + r.y * v,
+          group: level.groups.findIndex(g => g.dirs.includes(k) && (g.move === 'L') === (kind === 'L')),
+        });
+      });
+    }
+    const geo = { half, ext, paths, lamps };
+    geo.conflicts = computeConflicts(level, paths);
+    return geo;
+  }
+
+  function buildPath(level, k, i, move, ext) {
+    const { d, r } = DIRS[k];
+    const e = ext(k);
+    const off = LANE_W * (i + 0.5);
+    const P = (u, v) => ({ x: CX + d.x * u + r.x * v, y: CY + d.y * u + r.y * v });
+    const pts = [P(-(HALF + PAD), off), P(-e.cross, off)];
+    let exitDir, exitLane;
+    const STEPS = 24;
+    if (move === 'T') {
+      exitDir = k; exitLane = i;
+      pts.push(P(e.cross, off));
+    } else if (move === 'L') {
+      exitDir = LEFT_OF[k]; exitLane = 0;
+      // Quarter ellipse around the far-left corner of the box.
+      const a = off + e.self, b = LANE_W * 0.5 + e.cross;
+      for (let j = 1; j <= STEPS; j++) {
+        const t = (j / STEPS) * Math.PI / 2;
+        pts.push(P(-e.cross + b * Math.sin(t), -e.self + a * Math.cos(t)));
+      }
+    } else {
+      exitDir = RIGHT_OF[k];
+      exitLane = level.lanes[DIRS[exitDir].road].length - 1;
+      // Tight curve around the near-right corner.
+      const offX = LANE_W * (exitLane + 0.5);
+      const a = e.self - off, b = e.cross - offX;
+      for (let j = 1; j <= STEPS; j++) {
+        const t = (j / STEPS) * Math.PI / 2;
+        pts.push(P(-e.cross + b * Math.sin(t), e.self - a * Math.cos(t)));
+      }
+    }
+    const jEnd = pts.length - 1;
+    const exitD = DIRS[exitDir].d;
+    const remain = HALF + PAD - ext(exitDir).cross;
+    const last = pts[jEnd];
+    pts.push({ x: last.x + exitD.x * remain, y: last.y + exitD.y * remain });
+
+    const cum = [0];
+    for (let j = 1; j < pts.length; j++) cum.push(cum[j - 1] + dist(pts[j], pts[j - 1]));
+    const A = cum[1];
+    return {
+      dir: k, lane: i, move, pts, cum,
+      len: cum[cum.length - 1],
+      A,
+      exitStart: cum[jEnd],
+      stopS: A - CROSSWALK - STOP_GAP,
+      laneKey: k + i,
+      exitKey: exitDir + exitLane,
+    };
+  }
+
+  function pointAt(p, s) {
+    const cum = p.cum, pts = p.pts, n = pts.length;
+    let lo = 0;
+    if (s >= cum[n - 2]) lo = n - 2;
+    else if (s > 0) {
+      let hi = n - 2;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (cum[mid] <= s) lo = mid; else hi = mid - 1;
+      }
+    }
+    const a = pts[lo], b = pts[lo + 1];
+    const t = (s - cum[lo]) / (cum[lo + 1] - cum[lo]);
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, angle: Math.atan2(b.y - a.y, b.x - a.x) };
+  }
+
+  // Two signal groups conflict if any of their paths come close inside the box.
+  function computeConflicts(level, paths) {
+    const samples = paths.map(p => {
+      const out = [];
+      for (let s = p.A - 2; s <= p.exitStart + 12; s += 3) out.push(pointAt(p, s));
+      return out;
+    });
+    const conflicts = level.groups.map(() => new Set());
+    for (let i = 0; i < paths.length; i++) {
+      for (let j = i + 1; j < paths.length; j++) {
+        const p = paths[i], q = paths[j];
+        if (p.group === q.group || p.laneKey === q.laneKey) continue;
+        if (conflicts[p.group].has(q.group)) continue;
+        let hit = false;
+        for (const a of samples[i]) {
+          for (const b of samples[j]) if (dist(a, b) < CONFLICT_DIST) { hit = true; break; }
+          if (hit) break;
+        }
+        if (hit) { conflicts[p.group].add(q.group); conflicts[q.group].add(p.group); }
+      }
+    }
+    return conflicts;
+  }
 
   // ---- DOM ----
   const canvas = document.getElementById('board');
   const ctx = canvas.getContext('2d');
   const el = id => document.getElementById(id);
   const ui = {
-    cleared: el('stat-cleared'), time: el('stat-time'), best: el('stat-best'),
+    post: el('post'), level: el('stat-level'), cleared: el('stat-cleared'), goalFill: el('goal-fill'),
+    crashes: el('stat-crashes'), time: el('stat-time'),
     patienceFill: el('patience-fill'), patienceValue: el('patience-value'), patienceBar: el('patience-bar'),
-    signalNS: el('signal-ns'), signalEW: el('signal-ew'), rush: el('rush'),
-    switchBtn: el('switch-btn'), overlay: el('overlay'), overlayTitle: el('overlay-title'),
-    overlayBody: el('overlay-body'), startBtn: el('start-btn'), pauseBtn: el('pause-btn'),
+    controls: el('controls'), rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
+    pauseBtn: el('pause-btn'), levelsBtn: el('levels-btn'),
   };
 
-  // ---- Persistent best score (per browser, optional) ----
-  const loadBest = () => { try { return Number(localStorage.getItem('intersection-best')) || 0; } catch { return 0; } };
-  const saveBest = v => { try { localStorage.setItem('intersection-best', String(v)); } catch { /* storage unavailable */ } };
+  // ---- Progress (per browser, optional) ----
+  function loadProgress() {
+    try {
+      const p = JSON.parse(localStorage.getItem('intersection-progress'));
+      if (p && typeof p.unlocked === 'number') return { unlocked: p.unlocked, best: p.best || {} };
+    } catch { /* storage unavailable */ }
+    return { unlocked: 1, best: {} };
+  }
+  function saveProgress() {
+    try { localStorage.setItem('intersection-progress', JSON.stringify(progress)); } catch { /* storage unavailable */ }
+  }
+  const progress = loadProgress();
 
   // ---- Game state ----
   let state;
-  let best = loadBest();
+  let geo;
 
-  function newState() {
-    const lanes = {};
-    for (const k of KEYS) lanes[k] = { cars: [], timer: 1 + Math.random() * 3, pending: 0 };
+  function newState(levelIndex) {
+    const level = LEVELS[levelIndex];
+    geo = buildGeometry(level);
+    const spawners = {};
+    for (const k of DIR_KEYS) spawners[k] = { timer: Math.random() * 2, pending: [], blockedFor: 0 };
     return {
-      mode: 'ready', // ready | running | paused | over
-      t: 0,
-      cleared: 0,
-      patience: 100,
-      lanes,
-      signal: { green: 'NS', phase: 'green', timer: 0, id: 0 },
-      rush: null,               // { lane, until }
-      nextRush: 22,
-      honkPulse: 0,
+      levelIndex, level,
+      mode: 'intro', // intro | running | paused | won | lost
+      t: 0, cleared: 0, crashes: 0, patience: 100,
+      groups: level.groups.map((g, i) => ({ ...g, state: i === 0 ? 'green' : 'red', timer: 0, cycle: 0, busy: 0 })),
+      cars: [], wrecks: [], particles: [], flashes: [],
+      spawners,
+      rush: null, nextRush: 25,
+      shake: 0, pulse: 0,
+      failAt: null, failReason: '',
+      hover: -1,
     };
   }
 
+  function prefill() {
+    for (let i = 0; i < 350; i++) step(0.02, true);
+    state.t = 0; state.cleared = 0; state.patience = 100;
+    for (const c of state.cars) c.wait = 0;
+  }
+
   // ---- Signals ----
-  function lightFor(axis) {
-    const sig = state.signal;
-    if (sig.phase === 'allred' || axis !== sig.green) return 'red';
-    return sig.phase; // green | yellow
+  function toggleGroup(i) {
+    if (state.mode !== 'running' || state.failAt !== null) return;
+    const g = state.groups[i];
+    if (!g) return;
+    if (g.state === 'green') { g.state = 'yellow'; g.timer = 0; g.cycle++; }
+    else if (g.state === 'red') g.state = 'green';
   }
 
-  function requestSwitch() {
-    if (state.mode !== 'running') return;
-    const sig = state.signal;
-    if (sig.phase !== 'green') return; // already changing
-    sig.phase = 'yellow';
-    sig.timer = 0;
-    sig.id++;
-  }
-
-  function updateSignal(dt) {
-    const sig = state.signal;
-    sig.timer += dt;
-    if (sig.phase === 'yellow' && sig.timer >= YELLOW_TIME) {
-      sig.phase = 'allred'; sig.timer = 0;
-    } else if (sig.phase === 'allred' && sig.timer >= ALL_RED_TIME) {
-      sig.phase = 'green'; sig.timer = 0;
-      sig.green = sig.green === 'NS' ? 'EW' : 'NS';
+  function updateGroups(dt) {
+    for (const g of state.groups) {
+      if (g.state !== 'yellow') continue;
+      g.timer += dt;
+      if (g.timer >= YELLOW_TIME) g.state = 'red';
     }
   }
 
   // ---- Traffic generation ----
-  function laneRate(key) {
-    const base = 0.16 + Math.min(0.24, state.t * 0.0025); // cars per second
-    return state.rush && state.rush.lane === key ? base * 2.6 : base;
+  function laneRate(k) {
+    const [r0, r1] = state.level.rate[DIRS[k].road];
+    const prog = Math.min(1, state.cleared / state.level.goal);
+    const base = r0 + (r1 - r0) * prog;
+    return state.rush && state.rush.dir === k ? base * 2.4 : base;
   }
 
-  const expRand = mean => -Math.log(1 - Math.random()) * mean;
+  function pickMove(k) {
+    const spec = state.level.lanes[DIRS[k].road];
+    if (spec.includes('L') && Math.random() < state.level.left) return 'L';
+    return Math.random() < state.level.right ? 'R' : 'T';
+  }
 
-  function makeCar() {
+  function makeCar(path) {
     const truck = Math.random() < 0.12;
     return {
-      s: 0, v: 0,
-      len: truck ? 40 : 24 + Math.random() * 6,
-      wid: truck ? 18 : 15,
-      maxV: truck ? 80 + Math.random() * 10 : 96 + Math.random() * 30,
+      path, s: 0, v: 0,
+      len: truck ? 38 : 22 + Math.random() * 6,
+      wid: truck ? 17 : 14,
+      maxV: truck ? 78 + Math.random() * 10 : 95 + Math.random() * 30,
       color: truck ? pick(TRUCK_COLORS) : pick(CAR_COLORS),
-      truck,
-      wait: 0,
-      commit: -1,
+      truck, wait: 0, commit: -1,
     };
   }
 
-  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-
-  function updateSpawns(dt) {
-    for (const k of KEYS) {
-      const lane = state.lanes[k];
-      lane.timer -= dt;
-      if (lane.timer <= 0) {
-        lane.pending = Math.min(lane.pending + 1, 9);
-        lane.timer = expRand(1 / laneRate(k));
+  function updateSpawns(dt, tails) {
+    for (const k of DIR_KEYS) {
+      const sp = state.spawners[k];
+      sp.timer -= dt;
+      if (sp.timer <= 0) {
+        if (sp.pending.length < 10) sp.pending.push(pickMove(k));
+        sp.timer = expRand(1 / laneRate(k));
       }
-      if (lane.pending > 0) {
-        const last = lane.cars[lane.cars.length - 1];
-        const room = last ? last.s - last.len - MIN_GAP : Infinity;
-        if (room > 6) {
-          const car = makeCar();
-          car.v = Math.min(car.maxV, Math.sqrt(2 * BRAKE * Math.max(0, room)));
-          lane.cars.push(car);
-          lane.pending--;
-        }
+      if (!sp.pending.length) { sp.blockedFor = 0; continue; }
+
+      // Pick the emptiest lane that allows the next driver's movement.
+      const move = sp.pending[0];
+      let best = null, bestRoom = 4;
+      for (const p of geo.paths) {
+        if (p.dir !== k || p.move !== move) continue;
+        const room = tails[p.laneKey] === undefined ? Infinity : tails[p.laneKey] - MIN_GAP;
+        if (room > bestRoom) { best = p; bestRoom = room; }
+      }
+      if (best) {
+        const car = makeCar(best);
+        car.v = Math.min(car.maxV, Math.sqrt(2 * BRAKE * Math.max(0, bestRoom)));
+        state.cars.push(car);
+        tails[best.laneKey] = -car.len;
+        sp.pending.shift();
+        sp.blockedFor = 0;
+      } else {
+        sp.blockedFor += dt;
       }
     }
 
-    // Rush hour surges on one random approach.
+    if (!state.level.rush) return;
     if (state.rush && state.t >= state.rush.until) state.rush = null;
     if (!state.rush && state.t >= state.nextRush) {
-      state.rush = { lane: pick(KEYS), until: state.t + 12 };
-      state.nextRush = state.t + 24 + Math.random() * 10;
+      state.rush = { dir: pick(DIR_KEYS), until: state.t + 12 };
+      state.nextRush = state.t + 22 + Math.random() * 10;
     }
   }
 
   // ---- Driving ----
-  function updateLane(key, dt) {
-    const lane = state.lanes[key];
-    const light = lightFor(APPROACHES[key].axis);
-    const sigId = state.signal.id;
+  function updateCars(dt) {
+    // Index cars by the approach lane and exit lane they share with others.
+    const byLane = {}, byExit = {};
+    for (const c of state.cars) {
+      (byLane[c.path.laneKey] ||= []).push(c);
+      (byExit[c.path.exitKey] ||= []).push(c);
+    }
 
-    for (let i = 0; i < lane.cars.length; i++) {
-      const c = lane.cars[i];
+    for (const c of state.cars) {
+      const p = c.path;
       let vMax = c.maxV;
 
-      // Keep distance from the car ahead.
-      if (i > 0) {
-        const lead = lane.cars[i - 1];
-        const gap = lead.s - lead.len - c.s - MIN_GAP;
-        vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * Math.max(0, gap)));
+      // Slow down for the turn.
+      const tv = TURN_SPEED[p.move];
+      if (tv && c.s < p.exitStart) vMax = Math.min(vMax, Math.sqrt(tv * tv + 2 * BRAKE * Math.max(0, p.A - c.s)));
+
+      // Gap to whoever is ahead in the same approach lane or exit lane.
+      let gap = Infinity;
+      for (const o of byLane[p.laneKey]) {
+        if (o === c || o.s <= c.s) continue;
+        if (o.path !== p && o.s - o.len >= p.A + 2) continue; // went a different way
+        gap = Math.min(gap, o.s - o.len - c.s);
       }
+      const ec = c.s - p.exitStart;
+      for (const o of byExit[p.exitKey]) {
+        if (o === c) continue;
+        const eo = o.s - o.path.exitStart;
+        if (eo <= ec || (o.path !== p && eo <= 0)) continue;
+        gap = Math.min(gap, eo - o.len - ec);
+      }
+      // Stop short of wrecks on the road ahead.
+      if (state.wrecks.length && c.s < p.len) {
+        for (const w of state.wrecks) {
+          for (let q = 6; q <= 72; q += 6) {
+            if (dist(pointAt(p, c.s + q), w) < 16) { gap = Math.min(gap, q - 10); break; }
+          }
+        }
+      }
+      vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * Math.max(0, gap - MIN_GAP)));
 
       // Obey the signal while still before the stop line.
       let mustStop = false;
-      if (c.s <= STOP_S && light !== 'green' && c.commit !== sigId) {
-        const d = STOP_S - c.s;
-        if (light === 'yellow' && (c.v * c.v) / (2 * HARD_BRAKE) > d) {
-          c.commit = sigId; // too close to stop safely: clear the intersection
+      const g = state.groups[p.group];
+      if (c.s <= p.stopS && g.state !== 'green' && c.commit !== g.cycle) {
+        const d = p.stopS - c.s;
+        if (g.state === 'yellow' && (c.v * c.v) / (2 * HARD_BRAKE) > d) {
+          c.commit = g.cycle; // too close to stop: clear the intersection
         } else {
           mustStop = true;
           vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * d));
@@ -186,51 +440,167 @@
 
       if (c.v < vMax) c.v = Math.min(vMax, c.v + ACCEL * dt);
       else c.v = Math.max(vMax, c.v - HARD_BRAKE * 1.5 * dt);
-
       const before = c.s;
       c.s += c.v * dt;
-      if (mustStop && before <= STOP_S && c.s > STOP_S) { c.s = STOP_S; c.v = 0; }
-      if (i > 0) {
-        const lead = lane.cars[i - 1];
-        const maxS = lead.s - lead.len - 2;
-        if (c.s > maxS) { c.s = Math.max(before, maxS); c.v = Math.min(c.v, lead.v); }
+      if (mustStop && before <= p.stopS && c.s > p.stopS) { c.s = p.stopS; c.v = 0; }
+
+      if (c.v < 4 && c.s <= p.stopS + 1) c.wait += dt;
+    }
+
+    // Cars that left the map count as cleared.
+    const keep = [];
+    for (const c of state.cars) {
+      if (c.s - c.len > c.path.len) {
+        state.cleared++;
+        state.patience = Math.min(100, state.patience + REFILL_PER_CAR);
+      } else keep.push(c);
+    }
+    state.cars = keep;
+  }
+
+  function laneTails() {
+    // Rear position of the last car in each approach lane.
+    const tails = {};
+    for (const c of state.cars) {
+      const rear = c.s - c.len;
+      const k = c.path.laneKey;
+      if (rear < c.path.A && (tails[k] === undefined || rear < tails[k])) tails[k] = rear;
+    }
+    return tails;
+  }
+
+  // ---- Crashes ----
+  function bodyCircles(c) {
+    const r = c.wid / 2 - 1;
+    return [0.18, 0.5, 0.82].map(f => { const pt = pointAt(c.path, c.s - c.len * f); pt.r = r; return pt; });
+  }
+
+  function detectCrashes() {
+    const zone = state.cars.filter(c => c.s > c.path.A - 6 && c.s - c.len < c.path.exitStart + 6);
+    const circles = zone.map(bodyCircles);
+    const hit = new Set();
+    for (let i = 0; i < zone.length; i++) {
+      for (let j = i + 1; j < zone.length; j++) {
+        const a = zone[i], b = zone[j];
+        if (a.path === b.path || a.path.laneKey === b.path.laneKey) continue;
+        if (hit.has(a) || hit.has(b)) continue;
+        let touch = false;
+        for (const ca of circles[i]) {
+          for (const cb of circles[j]) if (dist(ca, cb) < ca.r + cb.r) { touch = true; break; }
+          if (touch) break;
+        }
+        if (touch) { hit.add(a); hit.add(b); crash(a, b); }
       }
-
-      if (c.v < 4 && c.s <= STOP_S + 1) c.wait += dt;
     }
+    if (hit.size) state.cars = state.cars.filter(c => !hit.has(c));
+  }
 
-    // Remove cars that drove off the far edge.
-    while (lane.cars.length && lane.cars[0].s - lane.cars[0].len > PATH_LEN) {
-      lane.cars.shift();
-      state.cleared++;
-      state.patience = Math.min(100, state.patience + REFILL_PER_CAR);
+  function crash(a, b) {
+    const poses = [a, b].map(c => ({ c, pose: pointAt(c.path, c.s - c.len / 2) }));
+    const mid = { x: (poses[0].pose.x + poses[1].pose.x) / 2, y: (poses[0].pose.y + poses[1].pose.y) / 2 };
+    for (const { c, pose } of poses) {
+      const push = c.v * 0.55;
+      state.wrecks.push({
+        x: pose.x, y: pose.y, angle: pose.angle,
+        vx: Math.cos(pose.angle) * push, vy: Math.sin(pose.angle) * push,
+        spin: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 4),
+        len: c.len, wid: c.wid, color: c.color, truck: c.truck,
+        t: 0, smokeTimer: 0,
+      });
+    }
+    for (let i = 0; i < 26; i++) {
+      const ang = Math.random() * Math.PI * 2, sp = 90 + Math.random() * 220;
+      state.particles.push({ kind: 'spark', x: mid.x, y: mid.y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 0.3 + Math.random() * 0.5 });
+    }
+    for (let i = 0; i < 12; i++) {
+      const ang = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 110;
+      state.particles.push({
+        kind: 'debris', x: mid.x, y: mid.y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+        life: 0, max: 1.6 + Math.random(), size: 2 + Math.random() * 3,
+        color: pick([a.color, b.color, '#cfd6dc', '#1c2126']), rot: Math.random() * 6, spin: (Math.random() - 0.5) * 12,
+      });
+    }
+    state.flashes.push({ x: mid.x, y: mid.y, t: 0 });
+    state.shake = reducedMotion ? 0 : 0.5;
+    state.crashes++;
+    state.patience = Math.max(0, state.patience - CRASH_PATIENCE);
+    if (state.crashes >= MAX_CRASHES && state.failAt === null) {
+      state.failAt = state.t + 1.8;
+      state.failReason = `${MAX_CRASHES} crashes. The city pulled you off signal duty.`;
     }
   }
 
-  function updatePatience(dt) {
-    let angry = 0, blocked = 0;
-    for (const k of KEYS) {
-      const lane = state.lanes[k];
-      for (const c of lane.cars) if (isAngry(c)) angry++;
-      if (lane.pending > 0) blocked++;
+  function updateEffects(dt) {
+    for (const w of state.wrecks) {
+      w.t += dt;
+      w.x += w.vx * dt; w.y += w.vy * dt;
+      const f = Math.exp(-4 * dt);
+      w.vx *= f; w.vy *= f;
+      w.angle += w.spin * dt;
+      w.spin *= Math.exp(-3 * dt);
+      w.smokeTimer -= dt;
+      if (w.t < 3.5 && w.smokeTimer <= 0) {
+        w.smokeTimer = 0.14;
+        state.particles.push({
+          kind: 'smoke', x: w.x + (Math.random() - 0.5) * 8, y: w.y + (Math.random() - 0.5) * 8,
+          vx: 6 + Math.random() * 8, vy: -8 - Math.random() * 8, life: 0, max: 1.4 + Math.random() * 0.6,
+        });
+      }
     }
+    state.wrecks = state.wrecks.filter(w => w.t < WRECK_TIME);
+
+    for (const p of state.particles) {
+      p.life += dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      const drag = p.kind === 'spark' ? 3 : p.kind === 'debris' ? 4 : 0.6;
+      const f = Math.exp(-drag * dt);
+      p.vx *= f; p.vy *= f;
+      if (p.rot !== undefined) { p.rot += p.spin * dt; p.spin *= f; }
+    }
+    state.particles = state.particles.filter(p => p.life < p.max);
+    for (const fl of state.flashes) fl.t += dt;
+    state.flashes = state.flashes.filter(fl => fl.t < 1.4);
+    state.shake = Math.max(0, state.shake - dt);
+  }
+
+  // ---- Patience, busy groups, win/lose ----
+  const isAngry = c => c.wait > state.level.angry && c.s <= c.path.stopS + 1;
+
+  function updateStatus(dt) {
+    for (const g of state.groups) g.busy = 0;
+    let angry = 0;
+    for (const c of state.cars) {
+      const p = c.path;
+      if (c.s > p.stopS + 0.5 && c.s - c.len < p.exitStart) state.groups[p.group].busy++;
+      if (isAngry(c)) angry++;
+    }
+    let blocked = 0;
+    for (const k of DIR_KEYS) if (state.spawners[k].blockedFor > 1) blocked++;
     state.patience -= (angry * DRAIN_PER_ANGRY + blocked * DRAIN_PER_BLOCKED) * dt;
-    state.angry = angry;
-    if (state.patience <= 0) {
-      state.patience = 0;
-      endShift();
+
+    if (state.failAt === null) {
+      if (state.patience <= 0) {
+        state.patience = 0;
+        state.failAt = state.t + 0.3;
+        state.failReason = 'Drivers waited too long and the city ran out of patience.';
+      } else if (state.cleared >= state.level.goal) {
+        winLevel();
+      }
     }
+    if (state.failAt !== null && state.t >= state.failAt) loseLevel();
   }
 
-  const isAngry = c => c.wait > ANGRY_AFTER && c.s <= STOP_S + 1;
-
-  function update(dt) {
+  function step(dt, quiet) {
     state.t += dt;
-    state.honkPulse += dt;
-    updateSignal(dt);
-    updateSpawns(dt);
-    for (const k of KEYS) updateLane(k, dt);
-    updatePatience(dt);
+    state.pulse += dt;
+    updateGroups(dt);
+    updateSpawns(dt, laneTails());
+    updateCars(dt);
+    if (!quiet) {
+      detectCrashes();
+      updateEffects(dt);
+      updateStatus(dt);
+    }
   }
 
   // ---- Rendering ----
@@ -240,6 +610,7 @@
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const size = canvas.getBoundingClientRect().width;
+    if (!size) return;
     canvas.width = Math.round(size * dpr);
     canvas.height = Math.round(size * dpr);
     scale = (size * dpr) / W;
@@ -248,157 +619,168 @@
     drawBackground(background.getContext('2d'));
   }
 
-  // Seeded RNG so the city looks the same every shift.
   function seeded(seed) {
     return () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   }
 
+  // Local frame for one approach: +u is the direction of travel, +v is the driver's right.
+  function approachFrame(g, k) {
+    const { d, r } = DIRS[k];
+    g.transform(d.x, d.y, r.x, r.y, CX, CY);
+  }
+
   function drawBackground(g) {
     g.setTransform(scale, 0, 0, scale, 0, 0);
-    const rnd = seeded(42);
+    const rnd = seeded(7 + state.levelIndex * 13);
+    const hN = geo.half.NS, hE = geo.half.EW;
 
-    // Sidewalk concrete everywhere, then city blocks, then streets on top.
     g.fillStyle = '#9da5ad';
     g.fillRect(0, 0, W, H);
 
-    const blockSize = CX - ROAD_HALF - SIDEWALK;
-    const corners = [
-      { x: 0, y: 0, kind: 'buildings' },
-      { x: CX + ROAD_HALF + SIDEWALK, y: 0, kind: 'buildings' },
-      { x: 0, y: CY + ROAD_HALF + SIDEWALK, kind: 'park' },
-      { x: CX + ROAD_HALF + SIDEWALK, y: CY + ROAD_HALF + SIDEWALK, kind: 'buildings' },
-    ];
-    for (const c of corners) {
-      if (c.kind === 'park') drawPark(g, c.x, c.y, blockSize, rnd);
-      else drawBuildings(g, c.x, c.y, blockSize, rnd);
-    }
+    const left = CX - hN - SIDEWALK, right = CX + hN + SIDEWALK;
+    const top = CY - hE - SIDEWALK, bottom = CY + hE + SIDEWALK;
+    drawBuildings(g, 0, 0, left, top, rnd);
+    drawBuildings(g, right, 0, W - right, top, rnd);
+    drawPark(g, 0, bottom, left, H - bottom, rnd);
+    drawBuildings(g, right, bottom, W - right, H - bottom, rnd);
 
     // Sidewalk joints.
     g.strokeStyle = 'rgba(40, 48, 56, 0.18)';
     g.lineWidth = 1;
     for (let p = 0; p < W; p += 16) {
-      for (const off of [CX - ROAD_HALF - SIDEWALK, CX + ROAD_HALF]) {
-        g.beginPath(); g.moveTo(off, p); g.lineTo(off + SIDEWALK, p); g.stroke();
-        g.beginPath(); g.moveTo(p, off); g.lineTo(p, off + SIDEWALK); g.stroke();
-      }
+      for (const x of [left, CX + hN]) { g.beginPath(); g.moveTo(x, p); g.lineTo(x + SIDEWALK, p); g.stroke(); }
+      for (const y of [top, CY + hE]) { g.beginPath(); g.moveTo(p, y); g.lineTo(p, y + SIDEWALK); g.stroke(); }
     }
 
-    // Streets.
     g.fillStyle = '#3a4048';
-    g.fillRect(CX - ROAD_HALF, 0, ROAD_HALF * 2, H);
-    g.fillRect(0, CY - ROAD_HALF, W, ROAD_HALF * 2);
+    g.fillRect(CX - hN, 0, hN * 2, H);
+    g.fillRect(0, CY - hE, W, hE * 2);
 
-    // Curbs.
     g.strokeStyle = '#c7ccd1';
     g.lineWidth = 2;
-    const e = ROAD_HALF + 1;
+    const ex = hN + 1, ey = hE + 1;
     for (const [x1, y1, x2, y2] of [
-      [CX - e, 0, CX - e, CY - e], [CX + e, 0, CX + e, CY - e],
-      [CX - e, CY + e, CX - e, H], [CX + e, CY + e, CX + e, H],
-      [0, CY - e, CX - e, CY - e], [0, CY + e, CX - e, CY + e],
-      [CX + e, CY - e, W, CY - e], [CX + e, CY + e, W, CY + e],
+      [CX - ex, 0, CX - ex, CY - ey], [CX + ex, 0, CX + ex, CY - ey],
+      [CX - ex, CY + ey, CX - ex, H], [CX + ex, CY + ey, CX + ex, H],
+      [0, CY - ey, CX - ex, CY - ey], [0, CY + ey, CX - ex, CY + ey],
+      [CX + ex, CY - ey, W, CY - ey], [CX + ex, CY + ey, W, CY + ey],
     ]) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
 
-    // Markings, drawn once per approach in the eastbound frame and rotated.
-    for (const k of KEYS) {
+    for (const k of DIR_KEYS) {
       g.save();
-      g.translate(CX, CY);
-      g.rotate(APPROACHES[k].angle);
-      g.translate(-CX, -CY);
-      drawApproachMarkings(g);
+      approachFrame(g, k);
+      drawApproachMarkings(g, k);
       g.restore();
     }
   }
 
-  function drawBuildings(g, x, y, size, rnd) {
-    g.fillStyle = '#7d858d';
-    g.fillRect(x, y, size, size);
-    const roofs = ['#5b6670', '#6f6a63', '#4f5a52', '#73665f', '#56606b'];
-    const split = 0.4 + rnd() * 0.2;
-    const cols = [size * split, size * (1 - split)];
-    let cx = x;
-    for (const w of cols) {
-      const rows = 1 + Math.floor(rnd() * 2);
-      let cy = y;
-      for (let r = 0; r < rows; r++) {
-        const h = rows === 1 ? size : r === 0 ? size * (0.4 + rnd() * 0.2) : size - (cy - y);
-        const bx = cx + 4, by = cy + 4, bw = w - 8, bh = h - 8;
-        g.fillStyle = roofs[Math.floor(rnd() * roofs.length)];
-        g.fillRect(bx, by, bw, bh);
-        // Parapet edge and rooftop units.
-        g.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-        g.lineWidth = 2;
-        g.strokeRect(bx + 3, by + 3, bw - 6, bh - 6);
-        const units = 1 + Math.floor(rnd() * 3);
-        for (let u = 0; u < units; u++) {
-          const uw = 12 + rnd() * 18, uh = 10 + rnd() * 14;
-          const ux = bx + 10 + rnd() * Math.max(1, bw - uw - 20);
-          const uy = by + 10 + rnd() * Math.max(1, bh - uh - 20);
-          g.fillStyle = 'rgba(20, 24, 28, 0.25)';
-          g.fillRect(ux + 3, uy + 3, uw, uh);
-          g.fillStyle = '#a9b0b6';
-          g.fillRect(ux, uy, uw, uh);
-        }
-        cy += h;
+  function drawApproachMarkings(g, k) {
+    const e = geo.ext(k);
+    const spec = state.level.lanes[DIRS[k].road];
+    const uStop = -e.cross - CROSSWALK - STOP_GAP;
+    const far = -(HALF + PAD);
+
+    // Double yellow centre line.
+    g.fillStyle = '#e3b23c';
+    g.fillRect(far, -2.5, uStop + 4 - far, 1.6);
+    g.fillRect(far, 0.9, uStop + 4 - far, 1.6);
+
+    // Lane lines: solid beside a turn lane, dashed between through lanes.
+    g.fillStyle = '#eef0ea';
+    for (let j = 1; j < spec.length; j++) {
+      const v = LANE_W * j - 1;
+      if (spec[j - 1] === 'L') g.fillRect(uStop - 150, v, 150, 2);
+      for (let u = far; u < (spec[j - 1] === 'L' ? uStop - 150 : uStop); u += 24) g.fillRect(u, v, 12, 2);
+      for (let u = far; u < uStop + 8; u += 24) g.fillRect(u, -LANE_W * j - 1, 12, 2);
+    }
+
+    // Stop line and crosswalk.
+    g.fillRect(uStop + 1, 2, 4, e.self - 2);
+    for (let v = -e.self + 3; v < e.self - 3; v += 8) g.fillRect(-e.cross - CROSSWALK + 2, v, CROSSWALK - 4, 4);
+
+    // Painted lane arrows.
+    g.strokeStyle = 'rgba(238, 240, 234, 0.85)';
+    g.fillStyle = 'rgba(238, 240, 234, 0.85)';
+    g.lineWidth = 2.5;
+    spec.forEach((laneSpec, i) => drawLaneArrow(g, uStop - 46, LANE_W * (i + 0.5), laneSpec));
+  }
+
+  function drawLaneArrow(g, u, v, spec) {
+    const head = (x, y, dx, dy) => {
+      g.beginPath();
+      g.moveTo(x + dx * 6, y + dy * 6);
+      g.lineTo(x - dy * 4, y + dx * 4);
+      g.lineTo(x + dy * 4, y - dx * 4);
+      g.closePath(); g.fill();
+    };
+    g.beginPath();
+    if (spec === 'L') {
+      g.moveTo(u - 12, v); g.lineTo(u + 4, v); g.lineTo(u + 4, v - 6);
+      g.stroke(); head(u + 4, v - 6, 0, -1);
+    } else {
+      g.moveTo(u - 12, v); g.lineTo(u + 8, v);
+      g.stroke(); head(u + 8, v, 1, 0);
+      if (spec.includes('R')) {
+        g.beginPath(); g.moveTo(u - 2, v); g.lineTo(u - 2, v + 6); g.stroke();
+        head(u - 2, v + 6, 0, 1);
       }
-      cx += w;
     }
   }
 
-  function drawPark(g, x, y, size, rnd) {
+  function drawBuildings(g, x, y, w, h, rnd) {
+    g.fillStyle = '#7d858d';
+    g.fillRect(x, y, w, h);
+    const roofs = ['#5b6670', '#6f6a63', '#4f5a52', '#73665f', '#56606b'];
+    const split = 0.4 + rnd() * 0.2;
+    let cx = x;
+    for (const cw of [w * split, w * (1 - split)]) {
+      const rows = 1 + Math.floor(rnd() * 2);
+      let cy = y;
+      for (let r = 0; r < rows; r++) {
+        const ch = rows === 1 ? h : r === 0 ? h * (0.4 + rnd() * 0.2) : h - (cy - y);
+        const bx = cx + 4, by = cy + 4, bw = cw - 8, bh = ch - 8;
+        if (bw > 8 && bh > 8) {
+          g.fillStyle = roofs[Math.floor(rnd() * roofs.length)];
+          g.fillRect(bx, by, bw, bh);
+          g.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+          g.lineWidth = 2;
+          g.strokeRect(bx + 3, by + 3, bw - 6, bh - 6);
+          const units = 1 + Math.floor(rnd() * 3);
+          for (let u = 0; u < units; u++) {
+            const uw = Math.min(bw - 12, 12 + rnd() * 18), uh = Math.min(bh - 12, 10 + rnd() * 14);
+            if (uw < 4 || uh < 4) continue;
+            const ux = bx + 6 + rnd() * Math.max(1, bw - uw - 12);
+            const uy = by + 6 + rnd() * Math.max(1, bh - uh - 12);
+            g.fillStyle = 'rgba(20, 24, 28, 0.25)';
+            g.fillRect(ux + 3, uy + 3, uw, uh);
+            g.fillStyle = '#a9b0b6';
+            g.fillRect(ux, uy, uw, uh);
+          }
+        }
+        cy += ch;
+      }
+      cx += cw;
+    }
+  }
+
+  function drawPark(g, x, y, w, h, rnd) {
     g.fillStyle = '#5d7d4f';
-    g.fillRect(x, y, size, size);
+    g.fillRect(x, y, w, h);
     g.strokeStyle = '#b8b09c';
     g.lineWidth = 8;
     g.beginPath();
-    g.moveTo(x + size, y + 10);
-    g.quadraticCurveTo(x + size * 0.45, y + size * 0.4, x + 10, y + size);
+    g.moveTo(x + w, y + 10);
+    g.quadraticCurveTo(x + w * 0.45, y + h * 0.4, x + 10, y + h);
     g.stroke();
-    for (let i = 0; i < 26; i++) {
-      const tx = x + 14 + rnd() * (size - 28), ty = y + 14 + rnd() * (size - 28);
-      const r = 8 + rnd() * 10;
+    const trees = Math.round((w * h) / 2000);
+    for (let i = 0; i < trees; i++) {
+      const tx = x + 12 + rnd() * Math.max(1, w - 24), ty = y + 12 + rnd() * Math.max(1, h - 24);
+      const r = 7 + rnd() * 9;
       g.fillStyle = 'rgba(20, 30, 18, 0.3)';
       g.beginPath(); g.arc(tx + 3, ty + 3, r, 0, Math.PI * 2); g.fill();
       g.fillStyle = rnd() < 0.5 ? '#3f6a3a' : '#4b7a43';
       g.beginPath(); g.arc(tx, ty, r, 0, Math.PI * 2); g.fill();
     }
-  }
-
-  // Markings for the approach that travels east (arrives from the left).
-  function drawApproachMarkings(g) {
-    const edge = CX - ROAD_HALF;
-    // Double yellow centre line up to the crosswalk.
-    g.fillStyle = '#e3b23c';
-    g.fillRect(0, CY - 3, edge - CROSSWALK - 4, 2);
-    g.fillRect(0, CY + 1, edge - CROSSWALK - 4, 2);
-    // Stop line across the inbound lane.
-    g.fillStyle = '#eef0ea';
-    g.fillRect(edge - CROSSWALK - 8, CY + 2, 4, ROAD_HALF - 2);
-    // Zebra crosswalk spanning the whole street.
-    for (let y = CY - ROAD_HALF + 3; y < CY + ROAD_HALF - 3; y += 8) {
-      g.fillRect(edge - CROSSWALK + 2, y, CROSSWALK - 4, 4);
-    }
-  }
-
-  function drawSignalHead(g, light) {
-    // Eastbound frame: mounted on the near-right corner.
-    const x = CX - ROAD_HALF - CROSSWALK - 12, y = CY + ROAD_HALF + 6;
-    g.fillStyle = '#15181c';
-    roundRect(g, x - 4, y, 28, 11, 3); g.fill();
-    const lamps = [['red', '#e5484d'], ['yellow', '#f2a91f'], ['green', '#30c070']];
-    lamps.forEach(([name, color], i) => {
-      const on = light === name;
-      g.fillStyle = on ? color : '#2b3036';
-      g.beginPath(); g.arc(x + 2 + i * 8, y + 5.5, 3, 0, Math.PI * 2); g.fill();
-      if (on) {
-        g.fillStyle = color + '55';
-        g.beginPath(); g.arc(x + 2 + i * 8, y + 5.5, 7, 0, Math.PI * 2); g.fill();
-      }
-    });
-    // Glow on the stop line itself so the state reads at a glance.
-    const glow = { red: '#e5484d', yellow: '#f2a91f', green: '#30c070' }[light];
-    g.fillStyle = glow + '40';
-    g.fillRect(CX - ROAD_HALF - CROSSWALK - 22, CY + 2, 14, ROAD_HALF - 4);
   }
 
   function roundRect(g, x, y, w, h, r) {
@@ -411,17 +793,40 @@
     g.closePath();
   }
 
-  function drawCar(g, c, key) {
-    const a = APPROACHES[key];
-    const p = a.pos(c.s - c.len / 2);
+  function drawLamps(g) {
+    for (const lamp of geo.lamps) {
+      const color = LIGHT_COLOR[state.groups[lamp.group].state];
+      g.save();
+      approachFrame(g, lamp.dir);
+      if (state.hover === lamp.group) {
+        g.fillStyle = 'rgba(242, 169, 31, 0.22)';
+        g.fillRect(lamp.u - 110, lamp.v - LANE_W / 2 + 2, 110, LANE_W - 4);
+      }
+      g.fillStyle = '#15181c';
+      g.beginPath(); g.arc(lamp.u, lamp.v, 6.5, 0, Math.PI * 2); g.fill();
+      g.fillStyle = color;
+      if (lamp.kind === 'L') {
+        // Arrow pointing toward the driver's left (-v).
+        g.beginPath();
+        g.moveTo(lamp.u, lamp.v - 5);
+        g.lineTo(lamp.u + 4.5, lamp.v - 0.5);
+        g.lineTo(lamp.u - 4.5, lamp.v - 0.5);
+        g.closePath(); g.fill();
+        g.fillRect(lamp.u - 1.6, lamp.v - 1, 3.2, 5);
+      } else {
+        g.beginPath(); g.arc(lamp.u, lamp.v, 4.2, 0, Math.PI * 2); g.fill();
+      }
+      g.restore();
+    }
+  }
+
+  function drawCarBody(g, x, y, angle, c, wrecked) {
     g.save();
-    g.translate(p.x, p.y);
-    g.rotate(a.angle);
+    g.translate(x, y);
+    g.rotate(angle);
     const L = c.len, Wd = c.wid;
-    // Shadow.
     g.fillStyle = 'rgba(0, 0, 0, 0.3)';
     roundRect(g, -L / 2 + 2, -Wd / 2 + 2, L, Wd, 4); g.fill();
-    // Body.
     g.fillStyle = c.color;
     roundRect(g, -L / 2, -Wd / 2, L, Wd, c.truck ? 2 : 5); g.fill();
     if (c.truck) {
@@ -430,165 +835,347 @@
       g.fillStyle = '#2a3a4a';
       g.fillRect(L / 2 - 8, -Wd / 2 + 2, 4, Wd - 4);
     } else {
-      // Windshield and rear window.
       g.fillStyle = '#26323e';
       g.fillRect(L * 0.1, -Wd / 2 + 2, L * 0.18, Wd - 4);
       g.fillRect(-L * 0.36, -Wd / 2 + 2.5, L * 0.12, Wd - 5);
     }
-    // Brake lights when slowing or stopped.
-    if (c.v < c.maxV * 0.5) {
+    if (wrecked) {
+      // Crumpled front and scorch.
+      g.fillStyle = 'rgba(20, 20, 20, 0.45)';
+      roundRect(g, -L / 2, -Wd / 2, L, Wd, 4); g.fill();
+      g.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      g.lineWidth = 1.2;
+      g.beginPath();
+      g.moveTo(L / 2 - 6, -Wd / 2 + 1); g.lineTo(L / 2 - 2, -2); g.lineTo(L / 2 - 7, 2); g.lineTo(L / 2 - 3, Wd / 2 - 1);
+      g.stroke();
+    } else if (c.v < c.maxV * 0.5) {
       g.fillStyle = '#ff3b3b';
       g.fillRect(-L / 2, -Wd / 2 + 1, 2, 3);
       g.fillRect(-L / 2, Wd / 2 - 4, 2, 3);
     }
     g.restore();
+  }
 
-    // Waiting indicator: a ring that fills toward honking.
-    if (c.wait > 2 && c.s <= STOP_S + 1) {
-      const head = a.pos(c.s - c.len / 2);
-      const frac = Math.min(1, c.wait / ANGRY_AFTER);
-      const angry = frac >= 1;
-      g.lineWidth = 2.5;
-      g.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-      g.beginPath(); g.arc(head.x, head.y, 9, 0, Math.PI * 2); g.stroke();
-      g.strokeStyle = angry ? '#ff4d4f' : frac > 0.6 ? '#f2a91f' : '#e8edf2';
-      g.beginPath(); g.arc(head.x, head.y, 9, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); g.stroke();
-      if (angry && Math.sin(state.honkPulse * 10) > -0.3) {
-        g.fillStyle = '#ff4d4f';
-        g.font = '700 13px Overpass, system-ui, sans-serif';
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.fillText('!', head.x, head.y + 1);
-      }
+  function drawWaitRing(g, c) {
+    const angryAfter = state.level.angry;
+    if (c.wait <= angryAfter * 0.3 || c.s > c.path.stopS + 1) return;
+    const at = pointAt(c.path, c.s - c.len / 2);
+    const frac = Math.min(1, c.wait / angryAfter);
+    g.lineWidth = 2.5;
+    g.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+    g.beginPath(); g.arc(at.x, at.y, 8, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = frac >= 1 ? '#ff4d4f' : frac > 0.6 ? '#f2a91f' : '#e8edf2';
+    g.beginPath(); g.arc(at.x, at.y, 8, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); g.stroke();
+    if (frac >= 1 && Math.sin(state.pulse * 10) > -0.3) {
+      g.fillStyle = '#ff4d4f';
+      g.font = '700 12px Overpass, system-ui, sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('!', at.x, at.y + 1);
     }
   }
 
-  // Off-screen queue warning at the edge a lane enters from.
-  function drawBacklog(g, lane) {
-    if (!lane.pending) return;
-    const flash = 0.55 + 0.45 * Math.sin(state.honkPulse * 8);
-    const x = 6, y = CY + LANE_OFF;
-    g.globalAlpha = flash;
-    g.fillStyle = '#e5484d';
-    roundRect(g, x, y - 9, 30, 18, 4); g.fill();
-    g.globalAlpha = 1;
-    g.fillStyle = '#fff';
-    g.font = '700 11px "Overpass Mono", ui-monospace, monospace';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.save();
-    g.translate(x + 15, y);
-    g.rotate(-currentRotation); // keep the text upright
-    g.fillText('+' + lane.pending, 0, 1);
-    g.restore();
+  function drawEffects(g) {
+    for (const p of state.particles) {
+      const k = 1 - p.life / p.max;
+      if (p.kind === 'smoke') {
+        const r = 5 + (p.life / p.max) * 16;
+        g.fillStyle = `rgba(60, 64, 70, ${0.45 * k})`;
+        g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.fill();
+      } else if (p.kind === 'spark') {
+        g.strokeStyle = `rgba(255, ${190 + Math.round(60 * k)}, 90, ${k})`;
+        g.lineWidth = 1.6;
+        g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(p.x - p.vx * 0.04, p.y - p.vy * 0.04); g.stroke();
+      } else {
+        g.save();
+        g.globalAlpha = Math.min(1, k * 2);
+        g.translate(p.x, p.y); g.rotate(p.rot);
+        g.fillStyle = p.color;
+        g.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+        g.restore();
+      }
+    }
+    for (const fl of state.flashes) {
+      if (fl.t < 0.3) {
+        const k = fl.t / 0.3;
+        g.fillStyle = `rgba(255, 244, 214, ${0.85 * (1 - k)})`;
+        g.beginPath(); g.arc(fl.x, fl.y, 10 + k * 40, 0, Math.PI * 2); g.fill();
+      }
+      const pop = Math.min(1, fl.t / 0.15);
+      const alpha = fl.t > 1 ? 1 - (fl.t - 1) / 0.4 : 1;
+      g.save();
+      g.globalAlpha = Math.max(0, alpha);
+      g.translate(fl.x, fl.y - 30 - fl.t * 10);
+      g.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
+      g.font = '800 22px Overpass, system-ui, sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.lineWidth = 4;
+      g.strokeStyle = '#161b21';
+      g.strokeText('CRASH', 0, 0);
+      g.fillStyle = '#e5484d';
+      g.fillText('CRASH', 0, 0);
+      g.restore();
+    }
   }
-  let currentRotation = 0;
+
+  function drawBacklog(g) {
+    for (const k of DIR_KEYS) {
+      const sp = state.spawners[k];
+      if (sp.blockedFor <= 1 || !sp.pending.length) continue;
+      const { d, r } = DIRS[k];
+      const u = -HALF + 18, v = geo.ext(k).self / 2;
+      const x = CX + d.x * u + r.x * v, y = CY + d.y * u + r.y * v;
+      g.globalAlpha = 0.55 + 0.45 * Math.sin(state.pulse * 8);
+      g.fillStyle = '#e5484d';
+      roundRect(g, x - 15, y - 9, 30, 18, 4); g.fill();
+      g.globalAlpha = 1;
+      g.fillStyle = '#fff';
+      g.font = '700 11px "Overpass Mono", ui-monospace, monospace';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('+' + sp.pending.length, x, y + 1);
+    }
+  }
 
   function render() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(background, 0, 0);
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-
-    for (const k of KEYS) {
-      ctx.save();
-      ctx.translate(CX, CY);
-      ctx.rotate(APPROACHES[k].angle);
-      ctx.translate(-CX, -CY);
-      drawSignalHead(ctx, lightFor(APPROACHES[k].axis));
-      ctx.restore();
+    ctx.fillStyle = '#161b21';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    let sx = 0, sy = 0;
+    if (state.shake > 0) {
+      const amp = 7 * (state.shake / 0.5);
+      sx = (Math.random() - 0.5) * amp * scale; sy = (Math.random() - 0.5) * amp * scale;
     }
+    ctx.drawImage(background, sx, sy);
+    ctx.setTransform(scale, 0, 0, scale, sx, sy);
 
-    for (const k of KEYS) for (const c of state.lanes[k].cars) drawCar(ctx, c, k);
-
-    for (const k of KEYS) {
-      ctx.save();
-      ctx.translate(CX, CY);
-      currentRotation = APPROACHES[k].angle;
-      ctx.rotate(currentRotation);
-      ctx.translate(-CX, -CY);
-      drawBacklog(ctx, state.lanes[k]);
-      ctx.restore();
+    drawLamps(ctx);
+    for (const c of state.cars) {
+      const at = pointAt(c.path, c.s - c.len / 2);
+      drawCarBody(ctx, at.x, at.y, at.angle, c, false);
     }
+    for (const w of state.wrecks) {
+      ctx.globalAlpha = w.t > WRECK_TIME - 0.8 ? (WRECK_TIME - w.t) / 0.8 : 1;
+      drawCarBody(ctx, w.x, w.y, w.angle, w, true);
+      ctx.globalAlpha = 1;
+    }
+    drawEffects(ctx);
+    for (const c of state.cars) drawWaitRing(ctx, c);
+    drawBacklog(ctx);
+  }
+
+  // ---- Controls ----
+  const GLYPH = {
+    T: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17V5M5 9l5-5 5 5"/></svg>',
+    L: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13 17V9H5M8 5L4 9l4 4"/></svg>',
+  };
+
+  function groupSub(g) {
+    const move = g.move === 'L' ? 'Left arrow' : 'Straight & right';
+    if (g.dirs.length === 2) return `${g.dirs[0] === 'N' ? 'N–S' : 'E–W'} · ${move}`;
+    return move;
+  }
+
+  function buildControls() {
+    const n = state.groups.length;
+    ui.controls.dataset.count = n;
+    ui.controls.innerHTML = state.groups.map((g, i) => `
+      <button class="sig" type="button" id="sig-${i}" data-group="${i}" data-light="${g.state}" aria-label="${g.label} ${groupSub(g)}, key ${i + 1}">
+        <span class="lamp" aria-hidden="true">${GLYPH[g.move]}</span>
+        <span class="sig-text"><span class="sig-label">${g.label}</span><span class="sig-sub">${groupSub(g)}</span></span>
+        <span class="sig-meta"><kbd>${i + 1}</kbd><span class="warn">Unsafe</span></span>
+      </button>`).join('');
+  }
+
+  function isUnsafe(i) {
+    for (const j of geo.conflicts[i]) {
+      const o = state.groups[j];
+      if (o.state !== 'red' || o.busy > 0) return true;
+    }
+    return false;
   }
 
   // ---- HUD ----
   const fmtTime = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-  const LIGHT_TEXT = { green: 'Green', yellow: 'Yellow', red: 'Red' };
 
   function updateHud() {
-    ui.cleared.textContent = state.cleared;
+    const lvl = state.level;
+    ui.level.textContent = `${state.levelIndex + 1}. ${lvl.name}`;
+    ui.post.textContent = lvl.street;
+    ui.cleared.textContent = `${Math.min(state.cleared, lvl.goal)} / ${lvl.goal}`;
+    ui.goalFill.style.width = Math.min(100, (state.cleared / lvl.goal) * 100) + '%';
+    ui.crashes.textContent = `${state.crashes} / ${MAX_CRASHES}`;
+    ui.crashes.dataset.level = state.crashes === 0 ? 'ok' : state.crashes < MAX_CRASHES - 1 ? 'warn' : 'bad';
     ui.time.textContent = fmtTime(state.t);
-    ui.best.textContent = Math.max(best, state.cleared);
     const p = Math.ceil(state.patience);
     ui.patienceFill.style.width = state.patience + '%';
     ui.patienceValue.textContent = p + '%';
     ui.patienceBar.setAttribute('aria-valuenow', p);
     ui.patienceBar.dataset.level = p > 55 ? 'ok' : p > 25 ? 'warn' : 'bad';
-    for (const [node, axis] of [[ui.signalNS, 'NS'], [ui.signalEW, 'EW']]) {
-      const light = lightFor(axis);
-      node.dataset.light = light;
-      node.querySelector('.signal-state').textContent = LIGHT_TEXT[light];
-    }
-    ui.rush.hidden = !state.rush;
-    if (state.rush) ui.rush.textContent = `Rush: ${APPROACHES[state.rush.lane].name.toLowerCase()} traffic`;
-    ui.switchBtn.disabled = state.mode !== 'running' || state.signal.phase !== 'green';
+
+    const live = state.mode === 'running' && state.failAt === null;
+    state.groups.forEach((g, i) => {
+      const btn = document.getElementById('sig-' + i);
+      if (!btn) return;
+      btn.dataset.light = g.state;
+      btn.dataset.unsafe = live && g.state === 'red' && isUnsafe(i) ? 'true' : 'false';
+      btn.disabled = !live || g.state === 'yellow';
+    });
+
+    ui.rush.hidden = !state.rush || state.mode !== 'running';
+    if (state.rush) ui.rush.textContent = `Rush: ${DIRS[state.rush.dir].name.toLowerCase()} traffic`;
     ui.pauseBtn.disabled = state.mode !== 'running' && state.mode !== 'paused';
     ui.pauseBtn.textContent = state.mode === 'paused' ? 'Resume' : 'Pause';
   }
 
-  // ---- Flow ----
-  function showOverlay(title, body, button) {
-    ui.overlayTitle.textContent = title;
-    ui.overlayBody.innerHTML = body;
-    ui.startBtn.textContent = button;
+  // ---- Screens ----
+  function showCard(html) {
+    ui.card.innerHTML = html;
     ui.overlay.hidden = false;
+    const primary = ui.card.querySelector('.primary');
+    if (primary) primary.focus({ preventScroll: true });
+  }
+  const hideCard = () => { ui.overlay.hidden = true; };
+
+  function levelSummary(lvl) {
+    const lanes = s => s.length === 1 ? '1 lane' : `${s.length} lanes`;
+    return `${lanes(lvl.lanes.NS)} on Main St, ${lanes(lvl.lanes.EW)} on the cross street, ${lvl.groups.length} switches`;
   }
 
-  function startShift() {
-    state = newState();
+  function showLevelSelect() {
+    if (state.mode === 'running') state.mode = 'paused';
+    const rows = LEVELS.map((lvl, i) => {
+      const locked = i + 1 > progress.unlocked;
+      const best = progress.best[i];
+      const status = locked ? 'Locked' : best !== undefined ? `Done in ${fmtTime(best)}` : 'Open';
+      return `<button class="level-row" type="button" data-action="pick" data-level="${i}" ${locked ? 'disabled' : ''}>
+        <span class="level-num">${i + 1}</span>
+        <span class="level-info"><span class="level-name">${lvl.name}</span><span class="level-desc">${levelSummary(lvl)}</span></span>
+        <span class="level-status" data-done="${best !== undefined}">${status}</span>
+      </button>`;
+    }).join('');
+    const back = state.mode === 'paused' ? '<div class="card-actions"><button type="button" data-action="resume">Back to shift</button></div>' : '';
+    showCard(`<h2>Choose a shift</h2><p class="muted">Finish a level to unlock the next one.</p><div class="level-list">${rows}</div>${back}`);
+  }
+
+  function loadLevel(i) {
+    state = newState(i);
+    prefill();
+    buildControls();
+    resize();
+    showIntro();
+  }
+
+  function showIntro() {
+    const lvl = state.level;
+    showCard(`
+      <p class="eyebrow">Level ${state.levelIndex + 1} · ${lvl.street}</p>
+      <h2>${lvl.name}</h2>
+      <p>${lvl.intro}</p>
+      <p class="muted">${lvl.tip}</p>
+      <p class="goal">Clear <strong>${lvl.goal}</strong> cars. ${MAX_CRASHES} crashes or an empty patience meter ends the shift.</p>
+      <div class="card-actions">
+        <button class="primary" type="button" data-action="start">Start shift</button>
+        <button type="button" data-action="levels">All levels</button>
+      </div>`);
+  }
+
+  function startLevel() {
     state.mode = 'running';
-    ui.overlay.hidden = true;
+    hideCard();
   }
 
-  function endShift() {
-    state.mode = 'over';
-    const newBest = state.cleared > best;
-    if (newBest) { best = state.cleared; saveBest(best); }
-    showOverlay(
-      'Shift over',
-      `<p>The city ran out of patience after <strong>${fmtTime(state.t)}</strong>.</p>` +
-      `<p>You moved <strong>${state.cleared}</strong> cars through the intersection.` +
-      (newBest ? ' That is your new best.' : ` Your best is ${best}.`) + '</p>',
-      'Start new shift'
-    );
+  function winLevel() {
+    state.mode = 'won';
+    const i = state.levelIndex;
+    const prev = progress.best[i];
+    if (prev === undefined || state.t < prev) progress.best[i] = state.t;
+    progress.unlocked = Math.max(progress.unlocked, Math.min(LEVELS.length, i + 2));
+    saveProgress();
+    const hasNext = i + 1 < LEVELS.length;
+    showCard(`
+      <p class="eyebrow">Level ${i + 1} complete</p>
+      <h2>${hasNext ? 'Intersection cleared' : 'You ran every intersection'}</h2>
+      <p>You moved <strong>${state.cleared}</strong> cars in <strong>${fmtTime(state.t)}</strong> with <strong>${state.crashes}</strong> ${state.crashes === 1 ? 'crash' : 'crashes'}.</p>
+      ${hasNext ? `<p class="muted">Next: ${LEVELS[i + 1].name}. ${levelSummary(LEVELS[i + 1])}.</p>` : '<p class="muted">Every level is unlocked. Try to beat your times.</p>'}
+      <div class="card-actions">
+        ${hasNext ? '<button class="primary" type="button" data-action="next">Next level</button>' : ''}
+        <button ${hasNext ? '' : 'class="primary"'} type="button" data-action="retry">Replay</button>
+        <button type="button" data-action="levels">All levels</button>
+      </div>`);
+  }
+
+  function loseLevel() {
+    state.mode = 'lost';
+    showCard(`
+      <p class="eyebrow">Level ${state.levelIndex + 1} · ${state.level.name}</p>
+      <h2>Shift over</h2>
+      <p>${state.failReason}</p>
+      <p class="muted">You cleared ${state.cleared} of ${state.level.goal} cars in ${fmtTime(state.t)}.</p>
+      <div class="card-actions">
+        <button class="primary" type="button" data-action="retry">Try again</button>
+        <button type="button" data-action="levels">All levels</button>
+      </div>`);
   }
 
   function togglePause() {
     if (state.mode === 'running') {
       state.mode = 'paused';
-      showOverlay('Paused', '<p>Traffic is frozen. Resume when you are ready.</p>', 'Resume');
+      showCard(`<h2>Paused</h2><p class="muted">Traffic is frozen.</p>
+        <div class="card-actions">
+          <button class="primary" type="button" data-action="resume">Resume</button>
+          <button type="button" data-action="retry">Restart level</button>
+          <button type="button" data-action="levels">All levels</button>
+        </div>`);
     } else if (state.mode === 'paused') {
       state.mode = 'running';
-      ui.overlay.hidden = true;
+      hideCard();
     }
   }
 
-  ui.startBtn.addEventListener('click', () => {
-    if (state.mode === 'paused') togglePause();
-    else startShift();
+  ui.card.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === 'start') startLevel();
+    else if (action === 'levels') showLevelSelect();
+    else if (action === 'pick') loadLevel(Number(btn.dataset.level));
+    else if (action === 'next') loadLevel(state.levelIndex + 1);
+    else if (action === 'retry') loadLevel(state.levelIndex);
+    else if (action === 'resume') togglePause();
   });
-  ui.switchBtn.addEventListener('click', requestSwitch);
+
+  ui.controls.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-group]');
+    if (btn) toggleGroup(Number(btn.dataset.group));
+  });
+  const setHover = e => {
+    const btn = e.target.closest && e.target.closest('button[data-group]');
+    state.hover = btn ? Number(btn.dataset.group) : -1;
+  };
+  ui.controls.addEventListener('pointerover', setHover);
+  ui.controls.addEventListener('pointerleave', () => { state.hover = -1; });
+  ui.controls.addEventListener('focusin', setHover);
+  ui.controls.addEventListener('focusout', () => { state.hover = -1; });
+
   ui.pauseBtn.addEventListener('click', togglePause);
-  canvas.addEventListener('pointerdown', e => { e.preventDefault(); requestSwitch(); });
-  window.addEventListener('keydown', e => {
-    if (e.code === 'Space' || e.code === 'Enter') {
-      if (e.target instanceof HTMLButtonElement) return; // let buttons handle their own keys
-      e.preventDefault();
-      if (state.mode === 'running') requestSwitch();
-      else if (state.mode !== 'paused') startShift();
-    } else if (e.code === 'KeyP' || e.code === 'Escape') {
-      togglePause();
+  ui.levelsBtn.addEventListener('click', showLevelSelect);
+
+  // Tapping a lamp on the road toggles its signal group.
+  canvas.addEventListener('pointerdown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * W;
+    const y = ((e.clientY - rect.top) / rect.height) * H;
+    let best = null, bestD = 16;
+    for (const lamp of geo.lamps) {
+      const d = Math.hypot(lamp.x - x, lamp.y - y);
+      if (d < bestD) { best = lamp; bestD = d; }
     }
+    if (best) { e.preventDefault(); toggleGroup(best.group); }
+  });
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
+    const m = /^Digit([1-9])$/.exec(e.code);
+    if (m) { e.preventDefault(); toggleGroup(Number(m[1]) - 1); }
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.mode === 'running') togglePause();
@@ -600,19 +1187,19 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    if (state.mode === 'running') update(dt);
+    if (state.mode === 'running') step(dt, false);
+    else updateEffects(dt);
     render();
     updateHud();
     requestAnimationFrame(frame);
   }
 
-  state = newState();
-  // Pre-fill a little traffic so the ready screen shows a live street.
-  for (let i = 0; i < 300; i++) { updateSignal(0.02); updateSpawns(0.02); for (const k of KEYS) updateLane(k, 0.02); }
-  state.t = 0; state.cleared = 0; state.patience = 100; state.mode = 'ready';
-  for (const k of KEYS) for (const c of state.lanes[k].cars) c.wait = 0;
-
+  const startAt = Math.min(progress.unlocked, LEVELS.length) - 1;
+  state = newState(startAt);
+  prefill();
+  buildControls();
   resize();
+  if (progress.unlocked > 1) showLevelSelect(); else showIntro();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize);
   requestAnimationFrame(frame);
 })();
