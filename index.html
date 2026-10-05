@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Intersection Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;700;800&family=Overpass+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+  <header class="masthead">
+    <h1>Intersection <span>Control</span></h1>
+    <span class="post">Post 01 · Main St &amp; 1st Ave</span>
+  </header>
+
+  <section class="hud" aria-label="Shift stats">
+    <div class="readout"><span class="label">Cars cleared</span><span class="value" id="stat-cleared">0</span></div>
+    <div class="readout"><span class="label">Shift time</span><span class="value" id="stat-time">0:00</span></div>
+    <div class="readout"><span class="label">Best</span><span class="value" id="stat-best">0</span></div>
+    <div class="readout patience">
+      <span class="label">City patience</span>
+      <div class="bar" id="patience-bar" role="progressbar" aria-label="City patience" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" data-level="ok">
+        <div class="bar-fill" id="patience-fill"></div>
+      </div>
+      <span id="patience-value">100%</span>
+    </div>
+  </section>
+
+  <div class="board-wrap">
+    <canvas id="board" tabindex="0" aria-label="Top-down view of the intersection. Tap to switch the lights."></canvas>
+    <div class="rush" id="rush" hidden></div>
+    <div class="overlay" id="overlay">
+      <div class="card">
+        <h2 id="overlay-title">You're on signal duty</h2>
+        <div id="overlay-body">
+          <p>Main St runs north–south and 1st Ave runs east–west. Only one street can have green at a time.</p>
+          <p>Switch the lights to keep both moving. Drivers who wait more than 8 seconds start honking and drain the city's patience. When it hits zero, your shift is over.</p>
+        </div>
+        <button class="primary" id="start-btn" type="button">Start shift</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="controls" aria-label="Signal controls">
+    <div class="signal" id="signal-ns" data-light="green">
+      <span class="lamp" aria-hidden="true"></span>
+      <span><span class="label">Main St (N–S)</span><span class="signal-state">Green</span></span>
+    </div>
+    <div class="signal" id="signal-ew" data-light="red">
+      <span class="lamp" aria-hidden="true"></span>
+      <span><span class="label">1st Ave (E–W)</span><span class="signal-state">Red</span></span>
+    </div>
+    <button id="pause-btn" type="button" disabled>Pause</button>
+    <button class="primary switch" id="switch-btn" type="button" disabled>Switch lights</button>
+  </section>
+
+  <p class="hint">Tap the intersection or press <kbd>Space</kbd> to switch. The light goes yellow, then all-red, then the other street gets green. <kbd>P</kbd> pauses.</p>
+</main>
+<script src="game.js"></script>
+</body>
+</html>
