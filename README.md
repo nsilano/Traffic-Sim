@@ -4,9 +4,11 @@ A browser game where you run the traffic signals at a city intersection. Open `i
 
 ## How to play
 
-Every signal group has its own switch. Pressing a switch turns a red group green, or sends a green group through yellow to red. Use the buttons, the number keys <kbd>1</kbd>–<kbd>8</kbd>, or tap a lamp at a stop line on the map.
+Each direction of traffic has its signal buttons on the map, on the block right beside its waiting line. The arrow on each button points the way those cars will drive: straight (right turns go with straight), or a left turn. Tap a red button to turn it green, and tap a green one to send it through yellow to red. Green street-name signs and a compass show which street is which. Number keys <kbd>1</kbd>–<kbd>8</kbd> work too, and tapping a lamp at a stop line does the same thing.
 
-The signals don't protect you. If two conflicting groups are green, or you turn one green while the other's cars are still clearing the box, cars crash. A switch shows **Unsafe** when turning it green right now would conflict with moving traffic.
+On the early levels one switch controls both directions of a street, so the buttons on both sides of the intersection change together.
+
+The signals don't protect you. If two conflicting groups are green, or you turn one green while the other's cars are still clearing the box, cars crash. A red **!** on a button means turning it green right now would cross moving traffic.
 
 - Clear the level's goal number of cars to win and unlock the next level.
 - Three crashes end the shift.

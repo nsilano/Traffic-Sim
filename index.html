@@ -35,20 +35,19 @@
 
   <div class="board-wrap">
     <canvas id="board" aria-label="Top-down view of the intersection. Tap a signal lamp on the road to switch it."></canvas>
+    <div class="signals" id="signals" aria-label="Signal buttons"></div>
     <div class="rush" id="rush" hidden></div>
     <div class="overlay" id="overlay">
       <div class="card" id="overlay-card"></div>
     </div>
   </div>
 
-  <section class="controls" id="controls" aria-label="Signal switches"></section>
-
   <div class="toolbar">
     <button id="pause-btn" type="button" disabled>Pause</button>
     <button id="levels-btn" type="button">Levels</button>
   </div>
 
-  <p class="hint">Each switch turns one signal group green or back to red through yellow. Use the buttons, the number keys, or tap a lamp at a stop line. Two conflicting groups on green means crashes. <kbd>P</kbd> pauses.</p>
+  <p class="hint">The buttons beside each waiting line control those cars. Arrows show where the cars are headed: straight (and right turns), or left. Tap a button to turn it green, tap again to send it through yellow to red. A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. On a keyboard, the numbers on the buttons work too. <kbd>P</kbd> pauses.</p>
 </main>
 <script src="game.js"></script>
 </body>

@@ -52,7 +52,7 @@
         { label: '1st Ave', dirs: ['E', 'W'], move: 'T' },
       ],
       goal: 20, rate: { NS: [0.13, 0.2], EW: [0.13, 0.2] }, left: 0, right: 0.15, angry: 9, rush: false,
-      intro: 'Each street has its own switch. Turn one street red before you turn the other green. If both are green, cars will crash.',
+      intro: 'The signal buttons sit next to the cars they control, and the arrows show which way those cars go. Turn one street red before you turn the other green. If both are green, cars will crash.',
       tip: 'After you switch a street off, wait for the yellow to end and for the last cars to clear the box.',
     },
     {
@@ -66,7 +66,7 @@
       ],
       goal: 30, rate: { NS: [0.14, 0.22], EW: [0.14, 0.22] }, left: 0.3, right: 0.12, angry: 15, rush: false,
       intro: 'Both streets now have a left-turn lane with its own arrow. Opposite left turns can go at the same time. A left arrow cannot run with the same street’s straight traffic.',
-      tip: 'A button marked Unsafe would conflict with traffic that is still moving.',
+      tip: 'A signal button with a red ! would conflict with traffic that is still moving.',
     },
     {
       name: 'Main St Widens', street: 'Main St & 2nd Ave',
@@ -111,7 +111,7 @@
       ],
       goal: 80, rate: { NS: [0.3, 0.42], EW: [0.22, 0.3] }, left: 0.28, right: 0.12, angry: 16, rush: true,
       intro: 'Every direction and every turn has its own signal. Eight switches, heavy traffic, and frequent rush-hour surges.',
-      tip: 'Some combinations across streets are safe too. Watch the Unsafe labels to find them.',
+      tip: 'Some combinations across streets are safe too. Watch for the red ! to find the ones that are not.',
     },
   ];
 
@@ -257,7 +257,7 @@
     post: el('post'), level: el('stat-level'), cleared: el('stat-cleared'), goalFill: el('goal-fill'),
     crashes: el('stat-crashes'), time: el('stat-time'),
     patienceFill: el('patience-fill'), patienceValue: el('patience-value'), patienceBar: el('patience-bar'),
-    controls: el('controls'), rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
+    signals: el('signals'), signalButtons: [], rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
     pauseBtn: el('pause-btn'), levelsBtn: el('levels-btn'),
   };
 
@@ -642,6 +642,7 @@
     drawBuildings(g, 0, 0, left, top, rnd);
     drawBuildings(g, right, 0, W - right, top, rnd);
     drawPark(g, 0, bottom, left, H - bottom, rnd);
+    drawCompass(g, 26, H - 30);
     drawBuildings(g, right, bottom, W - right, H - bottom, rnd);
 
     // Sidewalk joints.
@@ -783,6 +784,19 @@
     }
   }
 
+  function drawCompass(g, x, y) {
+    g.fillStyle = 'rgba(22, 27, 33, 0.75)';
+    g.beginPath(); g.arc(x, y, 16, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#e5484d';
+    g.beginPath(); g.moveTo(x, y - 11); g.lineTo(x + 5, y + 1); g.lineTo(x - 5, y + 1); g.closePath(); g.fill();
+    g.fillStyle = '#e8edf2';
+    g.beginPath(); g.moveTo(x, y + 11); g.lineTo(x + 5, y + 1); g.lineTo(x - 5, y + 1); g.closePath(); g.fill();
+    g.font = '800 11px Overpass, system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#e8edf2';
+    g.fillText('N', x, y - 23);
+  }
+
   function roundRect(g, x, y, w, h, r) {
     g.beginPath();
     g.moveTo(x + r, y);
@@ -922,7 +936,7 @@
       const sp = state.spawners[k];
       if (sp.blockedFor <= 1 || !sp.pending.length) continue;
       const { d, r } = DIRS[k];
-      const u = -HALF + 18, v = geo.ext(k).self / 2;
+      const u = -HALF + 44, v = geo.ext(k).self / 2;
       const x = CX + d.x * u + r.x * v, y = CY + d.y * u + r.y * v;
       g.globalAlpha = 0.55 + 0.45 * Math.sin(state.pulse * 8);
       g.fillStyle = '#e5484d';
@@ -960,29 +974,77 @@
     drawEffects(ctx);
     for (const c of state.cars) drawWaitRing(ctx, c);
     drawBacklog(ctx);
+    drawStreetSigns(ctx);
+  }
+
+  // Green street-name plates at the map edges, over each street.
+  function drawStreetSigns(g) {
+    const names = streetNames();
+    g.font = '800 12px Overpass, system-ui, sans-serif';
+    const plate = (text, x, y, anchor) => {
+      const w = g.measureText(text).width + 16, h = 20;
+      const x0 = anchor === 'left' ? x : x - w / 2, y0 = y - h / 2;
+      x = x0 + w / 2;
+      g.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      roundRect(g, x0 + 2, y0 + 2, w, h, 3); g.fill();
+      g.fillStyle = '#1d6b46';
+      roundRect(g, x0, y0, w, h, 3); g.fill();
+      g.strokeStyle = 'rgba(232, 241, 234, 0.8)';
+      g.lineWidth = 1;
+      roundRect(g, x0 + 2, y0 + 2, w - 4, h - 4, 2); g.stroke();
+      g.fillStyle = '#f2f6f3';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(text, x, y + 1);
+    };
+    plate(names.NS.toUpperCase(), CX, 16);
+    plate(names.EW.toUpperCase(), 8, CY, 'left');
   }
 
   // ---- Controls ----
+  // Each approach gets its own cluster of signal buttons, placed on the block
+  // beside the waiting line, with arrows pointing the way those cars drive.
   const GLYPH = {
-    T: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17V5M5 9l5-5 5 5"/></svg>',
-    L: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13 17V9H5M8 5L4 9l4 4"/></svg>',
+    T: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17V4M5 9l5-5 5 5"/></svg>',
+    L: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M14 17v-6a3 3 0 0 0-3-3H5M8.5 4.5 5 8l3.5 3.5"/></svg>',
   };
+  const ROTATE = { N: 0, E: 90, S: 180, W: -90 };
 
-  function groupSub(g) {
-    const move = g.move === 'L' ? 'Left arrow' : 'Straight & right';
-    if (g.dirs.length === 2) return `${g.dirs[0] === 'N' ? 'N–S' : 'E–W'} · ${move}`;
-    return move;
+  function streetNames() {
+    const [ns, ew] = state.level.street.split(' & ');
+    return { NS: ns, EW: ew };
   }
 
   function buildControls() {
-    const n = state.groups.length;
-    ui.controls.dataset.count = n;
-    ui.controls.innerHTML = state.groups.map((g, i) => `
-      <button class="sig" type="button" id="sig-${i}" data-group="${i}" data-light="${g.state}" aria-label="${g.label} ${groupSub(g)}, key ${i + 1}">
-        <span class="lamp" aria-hidden="true">${GLYPH[g.move]}</span>
-        <span class="sig-text"><span class="sig-label">${g.label}</span><span class="sig-sub">${groupSub(g)}</span></span>
-        <span class="sig-meta"><kbd>${i + 1}</kbd><span class="warn">Unsafe</span></span>
-      </button>`).join('');
+    const names = streetNames();
+    const clusters = DIR_KEYS.map(k => {
+      const { d, r } = DIRS[k];
+      const e = geo.ext(k);
+      // Corner of the block on the driver's right, just before the intersection.
+      const u = -e.cross - SIDEWALK, v = e.self + SIDEWALK;
+      const x = CX + d.x * u + r.x * v, y = CY + d.y * u + r.y * v;
+      const ex = Math.sign(-d.x + r.x), ey = Math.sign(-d.y + r.y);
+      const groups = [];
+      for (const lamp of geo.lamps) {
+        if (lamp.dir === k && !groups.includes(lamp.group)) groups.push(lamp.group);
+      }
+      groups.sort((a, b) => (state.groups[a].move === 'L' ? -1 : 1) - (state.groups[b].move === 'L' ? -1 : 1));
+      const buttons = groups.map(i => {
+        const g = state.groups[i];
+        const what = g.move === 'L' ? 'left turn' : 'straight and right';
+        return `<button class="map-sig" type="button" data-group="${i}" data-light="${g.state}"
+            aria-label="${names[DIRS[k].road]} ${DIRS[k].name.toLowerCase()} ${what}, key ${i + 1}" title="${DIRS[k].name} ${what} (key ${i + 1})">
+          <span class="arrow" style="transform: rotate(${ROTATE[k]}deg)">${GLYPH[g.move]}</span>
+          <span class="key" aria-hidden="true">${i + 1}</span>
+        </button>`;
+      }).join('');
+      return `<div class="cluster" data-x="${ex > 0 ? 'right' : 'left'}" data-y="${ey > 0 ? 'down' : 'up'}"
+          style="left: ${(x / W) * 100}%; top: ${(y / H) * 100}%">
+        <span class="cluster-name">${DIRS[k].name}</span>
+        <div class="cluster-buttons">${buttons}</div>
+      </div>`;
+    });
+    ui.signals.innerHTML = clusters.join('');
+    ui.signalButtons = [...ui.signals.querySelectorAll('.map-sig')];
   }
 
   function isUnsafe(i) {
@@ -1012,13 +1074,15 @@
     ui.patienceBar.dataset.level = p > 55 ? 'ok' : p > 25 ? 'warn' : 'bad';
 
     const live = state.mode === 'running' && state.failAt === null;
-    state.groups.forEach((g, i) => {
-      const btn = document.getElementById('sig-' + i);
-      if (!btn) return;
+    const unsafe = state.groups.map((g, i) => live && g.state === 'red' && isUnsafe(i));
+    for (const btn of ui.signalButtons) {
+      const i = Number(btn.dataset.group);
+      const g = state.groups[i];
       btn.dataset.light = g.state;
-      btn.dataset.unsafe = live && g.state === 'red' && isUnsafe(i) ? 'true' : 'false';
+      btn.dataset.unsafe = unsafe[i] ? 'true' : 'false';
+      btn.dataset.hover = state.hover === i ? 'true' : 'false';
       btn.disabled = !live || g.state === 'yellow';
-    });
+    }
 
     ui.rush.hidden = !state.rush || state.mode !== 'running';
     if (state.rush) ui.rush.textContent = `Rush: ${DIRS[state.rush.dir].name.toLowerCase()} traffic`;
@@ -1143,7 +1207,7 @@
     else if (action === 'resume') togglePause();
   });
 
-  ui.controls.addEventListener('click', e => {
+  ui.signals.addEventListener('click', e => {
     const btn = e.target.closest('button[data-group]');
     if (btn) toggleGroup(Number(btn.dataset.group));
   });
@@ -1151,10 +1215,10 @@
     const btn = e.target.closest && e.target.closest('button[data-group]');
     state.hover = btn ? Number(btn.dataset.group) : -1;
   };
-  ui.controls.addEventListener('pointerover', setHover);
-  ui.controls.addEventListener('pointerleave', () => { state.hover = -1; });
-  ui.controls.addEventListener('focusin', setHover);
-  ui.controls.addEventListener('focusout', () => { state.hover = -1; });
+  ui.signals.addEventListener('pointerover', setHover);
+  ui.signals.addEventListener('pointerleave', () => { state.hover = -1; });
+  ui.signals.addEventListener('focusin', setHover);
+  ui.signals.addEventListener('focusout', () => { state.hover = -1; });
 
   ui.pauseBtn.addEventListener('click', togglePause);
   ui.levelsBtn.addEventListener('click', showLevelSelect);

@@ -175,7 +175,7 @@ h1 span { color: var(--amber); }
 
 .rush {
   position: absolute;
-  top: 10px;
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--amber);
@@ -275,92 +275,118 @@ h1 span { color: var(--amber); }
 
 .level-status[data-done="true"] { color: var(--go); }
 
-/* ---- Signal switchboard ---- */
-.controls {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+/* ---- Signal buttons on the map ---- */
+.signals {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
-.controls[data-count="6"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.controls[data-count="8"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-
-.sig {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-items: center;
-  gap: 4px 10px;
-  text-align: left;
-  padding: 10px 12px;
-  font-weight: 400;
-  min-width: 0;
-  transition: border-color 0.15s, background-color 0.15s;
+.cluster {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  pointer-events: none;
 }
 
-.sig .lamp {
-  grid-row: 1 / 3;
-  width: 34px;
-  height: 34px;
+/* Clusters grow away from the intersection corner into the block. */
+.cluster[data-x="right"] { align-items: flex-start; --tx: 6px; }
+.cluster[data-x="left"] { align-items: flex-end; --tx: calc(-100% - 6px); }
+.cluster[data-y="down"] { flex-direction: column; --ty: 6px; }
+.cluster[data-y="up"] { flex-direction: column-reverse; --ty: calc(-100% - 6px); }
+.cluster { transform: translate(var(--tx), var(--ty)); }
+
+.cluster-name {
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: rgba(22, 27, 33, 0.82);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.cluster-buttons {
+  display: flex;
+  gap: 5px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(22, 27, 33, 0.82);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.map-sig {
+  pointer-events: auto;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.15);
   display: grid;
   place-items: center;
   background: var(--stop);
-  box-shadow: 0 0 12px rgba(229, 72, 77, 0.55);
   color: var(--bg);
+  box-shadow: 0 0 12px rgba(229, 72, 77, 0.5);
+  transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
-.sig .lamp svg {
-  width: 20px;
-  height: 20px;
+.map-sig:not(:disabled):hover { transform: scale(1.06); }
+.map-sig:not(:disabled):active { transform: scale(0.94); }
+.map-sig:disabled { opacity: 1; cursor: default; }
+
+.map-sig[data-light="green"] { background: var(--go); box-shadow: 0 0 14px rgba(48, 192, 112, 0.65); }
+.map-sig[data-light="yellow"] { background: var(--amber); box-shadow: 0 0 14px rgba(242, 169, 31, 0.65); }
+.map-sig[data-hover="true"] { border-color: var(--amber); }
+
+.map-sig .arrow { display: grid; place-items: center; }
+
+.map-sig svg {
+  width: 24px;
+  height: 24px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.6;
+  stroke-width: 2.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.sig[data-light="green"] .lamp { background: var(--go); box-shadow: 0 0 14px rgba(48, 192, 112, 0.6); }
-.sig[data-light="yellow"] .lamp { background: var(--amber); box-shadow: 0 0 14px rgba(242, 169, 31, 0.6); }
-.sig[data-light="green"] { border-color: rgba(48, 192, 112, 0.6); }
-
-/* Six or eight switches: stack lamp over label so names fit. */
-.controls[data-count="6"] .sig,
-.controls[data-count="8"] .sig {
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
+.map-sig .key {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 16px;
   text-align: center;
 }
 
-.controls[data-count="6"] .sig .lamp,
-.controls[data-count="8"] .sig .lamp { grid-row: auto; }
+/* Unsafe: a red ring and a "!" badge where the key number sits. */
+.map-sig[data-unsafe="true"] { border-color: #ff8a8d; }
+.map-sig[data-unsafe="true"] .key { background: var(--stop); color: #fff; font-size: 0; }
+.map-sig[data-unsafe="true"] .key::after { content: "!"; font-size: 0.7rem; }
 
-.sig-text { display: grid; min-width: 0; }
-.sig-label { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sig-sub { font-size: 0.75rem; color: var(--muted); line-height: 1.3; }
-
-.sig-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 1.2rem;
-}
-
-.warn {
-  display: none;
-  font-family: var(--font-data);
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--bg);
+.warn-dot {
+  display: inline-block;
+  min-width: 1.2em;
+  border-radius: 0.6em;
   background: var(--stop);
-  border-radius: 3px;
-  padding: 1px 5px;
+  color: #fff;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.2em;
 }
-
-.sig[data-unsafe="true"] .warn { display: inline-block; }
-.sig[data-unsafe="true"] { border-color: rgba(229, 72, 77, 0.6); }
 
 .toolbar {
   display: flex;
@@ -406,21 +432,23 @@ kbd {
 }
 
 @media (max-width: 600px) {
-  .controls[data-count="6"], .controls[data-count="8"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hud { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .level-readout { grid-column: 1 / -1; }
 }
 
 @media (max-width: 460px) {
   .value { font-size: 1.05rem; }
-  .sig { padding: 8px; gap: 2px 8px; }
-  .sig .lamp { width: 28px; height: 28px; }
-  .sig-meta kbd { display: none; }
+  .map-sig { width: 34px; height: 34px; }
+  .map-sig svg { width: 19px; height: 19px; }
+  .map-sig .key { display: none; }
+  .map-sig[data-unsafe="true"] .key { display: block; top: -4px; right: -4px; min-width: 13px; height: 13px; line-height: 13px; }
+  .cluster-buttons { gap: 3px; padding: 3px; }
+  .cluster-name { font-size: 0.55rem; }
   .card { padding: 14px 16px; gap: 8px; font-size: 0.85rem; line-height: 1.4; }
   .card h2 { font-size: 1.15rem; }
   .level-desc { font-size: 0.72rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bar-fill, .goal-bar span, .sig { transition: none; }
+  .bar-fill, .goal-bar span, .map-sig { transition: none; }
 }
