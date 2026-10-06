@@ -259,7 +259,7 @@
     patienceFill: el('patience-fill'), patienceValue: el('patience-value'), patienceBar: el('patience-bar'),
     signals: el('signals'), signalButtons: [], rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
     pauseBtn: el('pause-btn'), levelsBtn: el('levels-btn'),
-    freeplayBar: el('freeplay-bar'), liveDensity: el('live-density'), liveDensityValue: el('live-density-value'),
+    freeplayBar: el('freeplay-bar'), patienceRow: el('patience-row'), liveDensity: el('live-density'), liveDensityValue: el('live-density-value'),
   };
 
   // ---- Progress (per browser, optional) ----
@@ -564,7 +564,7 @@
   }
 
   // ---- Patience, busy groups, win/lose ----
-  const hasLimits = () => !state.freeplay || state.freeplay.limits;
+  const hasLimits = () => !state.freeplay; // freeplay never ends the game
   const isAngry = c => c.wait > state.level.angry && c.s <= c.path.stopS + 1;
 
   function updateStatus(dt) {
@@ -873,6 +873,7 @@
   }
 
   function drawWaitRing(g, c) {
+    if (state.freeplay) return; // no patience in freeplay
     const angryAfter = state.level.angry;
     if (c.wait <= angryAfter * 0.3 || c.s > c.path.stopS + 1) return;
     const at = pointAt(c.path, c.s - c.len / 2);
@@ -1070,6 +1071,7 @@
     ui.crashes.textContent = hasLimits() ? `${state.crashes} / ${MAX_CRASHES}` : String(state.crashes);
     ui.crashes.dataset.level = state.crashes === 0 ? 'ok' : !hasLimits() || state.crashes < MAX_CRASHES - 1 ? 'warn' : 'bad';
     ui.freeplayBar.hidden = !fp;
+    ui.patienceRow.hidden = !!fp;
     if (fp) ui.liveDensityValue.textContent = densityName(fp.density);
     ui.time.textContent = fmtTime(state.t);
     const p = Math.ceil(state.patience);
@@ -1138,10 +1140,10 @@
     try {
       const f = JSON.parse(localStorage.getItem('intersection-freeplay'));
       if (f && LEVELS[f.map] && f.density >= 1 && f.density <= 10) {
-        return { map: f.map, density: f.density, rush: !!f.rush, limits: !!f.limits };
+        return { map: f.map, density: f.density, rush: !!f.rush };
       }
     } catch { /* storage unavailable */ }
-    return { map: 1, density: 5, rush: true, limits: false };
+    return { map: 1, density: 5, rush: true };
   }
   function saveFreeplaySettings(f) {
     try { localStorage.setItem('intersection-freeplay', JSON.stringify(f)); } catch { /* storage unavailable */ }
@@ -1192,7 +1194,7 @@
         </div>
       </div>
       <label class="check"><input type="checkbox" id="fp-rush" ${f.rush ? 'checked' : ''}> Rush-hour surges</label>
-      <label class="check"><input type="checkbox" id="fp-limits" ${f.limits ? 'checked' : ''}> End the game after ${MAX_CRASHES} crashes or when patience runs out</label>
+      <p class="muted">No goal, no patience meter, and crashes never end the game.</p>
       <div class="card-actions">
         <button class="primary" type="button" data-action="freeplay-start">Start freeplay</button>
         <button type="button" data-action="levels">All levels</button>
@@ -1205,7 +1207,6 @@
       map: checked ? Number(checked.value) : 0,
       density: Number(ui.card.querySelector('#fp-density').value),
       rush: ui.card.querySelector('#fp-rush').checked,
-      limits: ui.card.querySelector('#fp-limits').checked,
     };
   }
 

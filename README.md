@@ -29,7 +29,7 @@ Progress and best times are saved in the browser.
 
 ## Freeplay
 
-Pick **Freeplay** at the bottom of the level list to play any of the five maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest) and whether rush-hour surges happen. By default crashes and patience never end the game; tick the option to turn those limits on. A density slider under the map changes traffic while you play, and your settings are remembered.
+Pick **Freeplay** at the bottom of the level list to play any of the five maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest) and whether rush-hour surges happen. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic while you play, and your settings are remembered.
 
 ## How it works
 
