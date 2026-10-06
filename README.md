@@ -46,7 +46,8 @@ Levels mix up the streets instead of only adding lanes:
 
 - **One-way streets:** every lane heads the same way, and some turns are impossible.
 - **T-junctions:** one road ends, so its drivers can only turn left or right.
-- **Lane drops:** fewer lanes leave the intersection than arrive. The outer lane tapers into the next after the box. Drivers already in the continuing lane go first, and merging drivers wait their turn.
+- **Lane drops:** fewer lanes leave the intersection than arrive. The outer lane tapers into the next after the box, and drivers zipper-merge: whoever is ahead goes first.
+- **Divided roads:** a planted median separates the two directions, which widens the box and lengthens left turns.
 - **Don't block the box:** drivers won't enter the intersection unless there's room on the far side, so a backed-up merge can hold up a green light.
 
 ## Levels
@@ -55,17 +56,17 @@ Levels mix up the streets instead of only adding lanes:
 |---|------|--------|----------|
 | 1 | First Shift | 1 lane each way | 2 |
 | 2 | Turn Lanes | Left-turn lanes | 4 |
-| 3 | Crosswalks | Left-turn lanes, pedestrians | 6 |
-| 4 | One Way | Two-way Main St, three-lane one-way avenue | 5 |
-| 5 | Harbor Merge | T-junction; Main St drops to one lane northbound | 5 |
-| 6 | Split Phases | Directions controlled separately; the avenue drops a lane both ways | 8 |
-| 7 | Downtown Rush | Every direction and turn separately; Main St drops a lane northbound | 10 |
+| 3 | Crosswalks | Left-turn lanes, pedestrians; tree canopies hang over the outer lanes | 6 |
+| 4 | One Way | Two-way Main St, three-lane one-way avenue; road works and long building shadows | 5 |
+| 5 | Harbor Merge | T-junction on the waterfront at night (headlights and streetlights only); Main St drops to one lane northbound | 5 |
+| 6 | Split Phases | Directions controlled separately; 3rd Ave is a divided boulevard with a planted median and drops a lane both ways | 8 |
+| 7 | Downtown Rush | Every direction and turn separately; Main St drops a lane northbound; an overpass hides part of the queue | 10 |
 
-Progress and best times are saved in the browser. Number keys <kbd>1</kbd>–<kbd>9</kbd> and <kbd>0</kbd> work the switches in order.
+Progress and best times are saved in the browser. Number keys <kbd>1</kbd>–<kbd>9</kbd> and <kbd>0</kbd>, on the number row or the numeric keypad, work the switches in order.
 
 ## Freeplay
 
-Pick **Freeplay** at the bottom of the level list to play any of the seven maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest, and Gridlock sends nearly four times as many cars), whether rush-hour surges happen, and whether pedestrians cross. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic while you play, and your settings are remembered.
+Pick **Freeplay** at the bottom of the level list to play any of the seven maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest, and Gridlock sends nearly four times as many cars), whether rush-hour surges happen, whether pedestrians cross, and whether it's night. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic while you play, and your settings are remembered.
 
 ## How it works
 

@@ -119,9 +119,9 @@
         { label: 'Main St', legs: ['N', 'S'] },
         { label: '1st Ave', legs: ['E', 'W'] },
       ],
-      peds: 0.05,
+      peds: 0.05, decor: ['trees'],
       goal: 35, rate: { NS: [0.14, 0.22], EW: [0.14, 0.22] }, left: 0.3, right: 0.12, angry: 15, rush: false,
-      intro: 'People now wait at the corners. Each crosswalk has a Walk button with a walking figure. Turning cars stop for people in the crosswalk, but straight-through traffic on green does not.',
+      intro: 'A leafy street: tree canopies hang over the outer lanes, so watch for cars slipping out from under them. People now wait at the corners. Each crosswalk has a Walk button with a walking figure. Turning cars stop for people in the crosswalk, but straight-through traffic on green does not.',
       tip: 'Let people cross a street while that street is red. Walk across Main St runs safely with 1st Ave straight traffic, and the flashing don’t-walk gives the last walkers time to finish.',
     },
     {
@@ -136,9 +136,9 @@
         { label: 'Main St', legs: ['N', 'S'] },
         { label: '2nd Ave', legs: ['E', 'W'] },
       ],
-      peds: 0.05,
+      peds: 0.05, decor: ['works', 'shadows'],
       goal: 45, rate: { NS: [0.18, 0.28], EW: [0.26, 0.36] }, left: 0.25, right: 0.15, angry: 15, rush: false,
-      intro: '2nd Ave is a one-way street heading west, with three lanes that all move on one switch. Northbound Main St can turn left onto it; southbound can only turn right.',
+      intro: 'Road works and tall buildings make this one hard to read. 2nd Ave is a one-way street heading west, with three lanes that all move on one switch. Northbound Main St can turn left onto it; southbound can only turn right.',
       tip: 'The avenue carries the most traffic. Its left turns cut across southbound Main St, so the avenue and Main St can never run together.',
     },
     {
@@ -154,15 +154,15 @@
         { label: 'Main St', legs: ['N', 'S'] },
         { label: 'Harbor Rd', legs: ['W'] },
       ],
-      peds: 0.05,
+      peds: 0.05, decor: ['harbor'], night: true,
       goal: 45, rate: { NS: [0.2, 0.3], EW: [0.2, 0.3] }, left: 0.35, right: 0.12, angry: 15, rush: false,
-      intro: 'Harbor Rd ends at Main St, so its drivers can only turn. North of the junction, Main St drops to one lane: the two northbound lanes and cars turning right off Harbor Rd all merge.',
+      intro: 'Night shift by the water: you\u2019ll mostly see headlights. Harbor Rd ends at Main St, so its drivers can only turn. North of the junction, Main St drops to one lane: the two northbound lanes and cars turning right off Harbor Rd all merge.',
       tip: 'When the merge backs up, drivers will not enter the junction until there is room on the other side. Long greens for northbound traffic stop helping once the merge is full.',
     },
     {
       name: 'Split Phases', street: 'Main St & 3rd Ave', desc: 'Split control, lane drops · 8 switches',
       lanes: { NS: ['L', 'T', 'TR'], EW: ['L', 'T', 'TR'] },
-      out: { E: 2, W: 2 },
+      out: { E: 2, W: 2 }, median: { EW: 28 },
       groups: [
         { label: 'Northbound', dirs: ['N'], move: 'T' },
         { label: 'Northbound', dirs: ['N'], move: 'L' },
@@ -177,13 +177,13 @@
       ],
       peds: 0.06,
       goal: 60, rate: { NS: [0.24, 0.34], EW: [0.18, 0.26] }, left: 0.28, right: 0.12, angry: 16, rush: true,
-      intro: 'Northbound and southbound Main St have separate controls. 3rd Ave loses a lane on both sides of the junction, so its traffic merges right after crossing. Rush-hour surges start here.',
+      intro: '3rd Ave is a divided boulevard with a planted median, so the box is wider and left turns take longer. Northbound and southbound Main St have separate controls. 3rd Ave loses a lane on both sides of the junction, so its traffic merges right after crossing. Rush-hour surges start here.',
       tip: 'Northbound straight with northbound left is safe. Northbound left with southbound straight is not.',
     },
     {
       name: 'Downtown Rush', street: 'Main St & Broadway', desc: 'Everything at once · 10 switches',
       lanes: { NS: ['L', 'T', 'T', 'TR'], EW: ['L', 'T', 'TR'] },
-      out: { N: 3 },
+      out: { N: 3 }, mergeStart: 100, mergeLen: 120, decor: ['overpass', 'shadows'],
       groups: [
         { label: 'Northbound', dirs: ['N'], move: 'T' },
         { label: 'Northbound', dirs: ['N'], move: 'L' },
@@ -200,7 +200,7 @@
       ],
       peds: 0.07,
       goal: 80, rate: { NS: [0.3, 0.42], EW: [0.22, 0.3] }, left: 0.28, right: 0.12, angry: 16, rush: true,
-      intro: 'Every direction and turn has its own signal, people cross on both streets, and northbound Main St drops a lane past the junction.',
+      intro: 'Every direction and turn has its own signal, people cross on both streets, and northbound Main St drops a lane past the junction. An overpass crosses the bottom of the map, so part of the northbound queue is hidden under it.',
       tip: 'Some combinations across streets are safe too. Watch for the red ! to find the ones that are not.',
     },
   ];
@@ -224,17 +224,25 @@
       out[k] = level.out?.[k] ?? lanes[k].length;
     }
     // Width of the half of a road that carries direction k (its lanes in the box).
-    const halfOf = k => Math.max(lanes[k].length, out[k]) * LANE_W;
+    // Half the width of a planted median on a divided road (0 on most roads).
+    const mh = k => (lanes[k].length + out[k] && lanes[OPP[k]].length + out[OPP[k]] ? (level.median?.[DIRS[k].road] || 0) / 2 : 0);
+    // Distance of lane i (inner lane 0) from the road's centre line.
+    const laneOff = (k, i) => mh(k) + LANE_W * (i + 0.5);
+    const halfOf = k => {
+      const n = Math.max(lanes[k].length, out[k]);
+      return n ? mh(k) + n * LANE_W : 0;
+    };
     // Box extents seen from approach k: `near` edge it enters, `far` edge it
     // leaves by, and how far the box reaches to the driver's right and left.
     const ext = k => ({ near: halfOf(RIGHT_OF[k]), far: halfOf(LEFT_OF[k]), right: halfOf(k), left: halfOf(OPP[k]) });
     // The road leg that traffic heading k arrives over.
-    const legRight = k => lanes[k].length * LANE_W;
+    const legRight = k => (lanes[k].length ? mh(k) + lanes[k].length * LANE_W : 0);
     const legLeft = k => (out[OPP[k]] > 0 ? halfOf(OPP[k]) : 0);
     const hasLeg = k => legRight(k) > 0 || legLeft(k) > 0;
     const box = { x0: CX - halfOf('S'), x1: CX + halfOf('N'), y0: CY - halfOf('W'), y1: CY + halfOf('E') };
 
-    const g = { lanes, out, halfOf, ext, legRight, legLeft, hasLeg, box };
+    const g = { lanes, out, mh, laneOff, halfOf, ext, legRight, legLeft, hasLeg, box,
+      mergeStart: level.mergeStart ?? MERGE_START, mergeLen: level.mergeLen ?? MERGE_LEN };
     const carGroups = level.groups;
     const groupFor = (k, move) => carGroups.findIndex(gr => gr.dirs.includes(k) && (gr.move === 'A' || (gr.move === 'L') === (move === 'L')));
 
@@ -262,7 +270,7 @@
           g.paths.push(p);
         }
         const { d, r } = DIRS[k];
-        const u = -ext(k).near - CROSSWALK - STOP_GAP + 9, v = LANE_W * (i + 0.5);
+        const u = -ext(k).near - CROSSWALK - STOP_GAP + 9, v = laneOff(k, i);
         const kind = laneSpec === 'L' ? 'L' : 'T';
         g.lamps.push({
           dir: k, lane: i, u, v, kind,
@@ -286,7 +294,7 @@
   function buildPath(g, k, i, move) {
     const { d, r } = DIRS[k];
     const e = g.ext(k);
-    const off = LANE_W * (i + 0.5);
+    const off = g.laneOff(k, i);
     const P = (u, v) => ({ x: CX + d.x * u + r.x * v, y: CY + d.y * u + r.y * v });
     const pts = [P(-(HALF + PAD), off), P(-e.near, off)];
     let exitDir, boxLane;
@@ -299,7 +307,7 @@
       exitDir = LEFT_OF[k]; boxLane = 0;
       if (g.out[exitDir] === 0) return null;
       // Quarter ellipse around the far-left corner of the box.
-      const a = off + e.left, b = LANE_W * 0.5 + e.near;
+      const a = off + e.left, b = g.laneOff(LEFT_OF[k], 0) + e.near;
       for (let j = 1; j <= STEPS; j++) {
         const t = (j / STEPS) * Math.PI / 2;
         pts.push(P(-e.near + b * Math.sin(t), -e.left + a * Math.cos(t)));
@@ -309,7 +317,7 @@
       if (g.out[exitDir] === 0) return null;
       boxLane = g.out[exitDir] - 1;
       // Curve around the near-right corner into the outer lane.
-      const offX = LANE_W * (boxLane + 0.5);
+      const offX = g.laneOff(exitDir, boxLane);
       const a = e.right - off, b = e.near - offX;
       for (let j = 1; j <= STEPS; j++) {
         const t = (j / STEPS) * Math.PI / 2;
@@ -324,10 +332,10 @@
     const shift = LANE_W * (exitLane - boxLane);
     if (shift) {
       // Lane ends after the box: taper across into the next lane.
-      pts.push({ x: X.x + ed.x * MERGE_START, y: X.y + ed.y * MERGE_START });
+      pts.push({ x: X.x + ed.x * g.mergeStart, y: X.y + ed.y * g.mergeStart });
       for (let m = 1; m <= 12; m++) {
         const t = m / 12, sm = t * t * (3 - 2 * t);
-        const along = MERGE_START + MERGE_LEN * t;
+        const along = g.mergeStart + g.mergeLen * t;
         pts.push({ x: X.x + ed.x * along + er.x * shift * sm, y: X.y + ed.y * along + er.y * shift * sm });
       }
     }
@@ -346,7 +354,7 @@
       exitKey: exitDir + exitLane,   // lane the car ends up in
       boxKey: exitDir + boxLane,     // lane the car is in right after the box
       merges: !!shift,
-      mergeS: cum[jEnd] + MERGE_START,
+      mergeS: cum[jEnd] + g.mergeStart,
     };
   }
 
@@ -632,14 +640,19 @@
         const eo = o.s - o.path.exitStart;
         const oWaitingToMerge = o.path.merges && o.s < o.path.mergeS;
         if (o.path !== p) {
-          // Merging: the car whose lane ends goes only when the lane beside
-          // it is clear; until then, cars in that lane ignore it.
+          // Zipper merge: whoever is ahead goes first. A merging car slots in
+          // behind a car that's level with or ahead of it (it can always
+          // drive up to the merge point)...
           if (cWaitingToMerge && !oWaitingToMerge) {
-            const alongside = eo > ec - c.len - 12;
-            if (alongside && eo - o.len < p.mergeS - p.exitStart + 6) gap = Math.min(gap, p.mergeS - c.s);
+            if (eo >= ec) gap = Math.min(gap, Math.max(eo - o.len - ec, p.mergeS - c.s));
             continue;
           }
-          if (oWaitingToMerge && !cWaitingToMerge) continue;
+          // ...and a car in the continuing lane makes room for a merging car
+          // that's ahead of it and close to the merge point.
+          if (oWaitingToMerge && !cWaitingToMerge) {
+            if (eo > ec && o.s > o.path.mergeS - 70) gap = Math.min(gap, eo - o.len - ec);
+            continue;
+          }
         }
         if (eo <= ec || (o.path !== p && eo <= 0)) continue;
         gap = Math.min(gap, eo - o.len - ec);
@@ -1184,6 +1197,9 @@
   // ---- Rendering ----
   let scale = 1;
   const background = document.createElement('canvas');
+  const overlay = document.createElement('canvas');   // decor drawn over traffic
+  const darkness = document.createElement('canvas');  // night lighting
+  const NIGHT_RES = 3;
 
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1192,9 +1208,11 @@
     canvas.width = Math.round(size * dpr);
     canvas.height = Math.round(size * dpr);
     scale = (size * dpr) / W;
-    background.width = canvas.width;
-    background.height = canvas.height;
+    for (const c of [background, overlay]) { c.width = canvas.width; c.height = canvas.height; }
+    // Light is soft, so the night layer can be a third of the resolution.
+    darkness.width = Math.ceil(canvas.width / NIGHT_RES); darkness.height = Math.ceil(canvas.height / NIGHT_RES);
     drawBackground(background.getContext('2d'));
+    drawOverlay(overlay.getContext('2d'));
   }
 
   function seeded(seed) {
@@ -1226,6 +1244,7 @@
     if (!geo.hasLeg('W')) drawBuildings(g, right, top, W - right, bottom - top, rnd);
     if (!geo.hasLeg('S')) drawBuildings(g, left, 0, right - left, top, rnd);
     if (!geo.hasLeg('N')) drawBuildings(g, left, bottom, right - left, H - bottom, rnd);
+    if (hasDecor('harbor')) drawHarbor(g, left - 4, rnd);
     drawCompass(g, 26, H - 30);
 
     g.fillStyle = '#3a4048';
@@ -1263,6 +1282,217 @@
       drawLegMarkings(g, k);
       g.restore();
     }
+    if (hasDecor('works')) drawRoadWorks(g, seeded(91));
+  }
+
+  // ---- Map decor ----
+  const hasDecor = name => (state.level.decor || []).includes(name);
+
+  function drawHarbor(g, edge, rnd) {
+    g.fillStyle = '#1e4a63';
+    g.fillRect(0, 0, edge, H);
+    g.strokeStyle = 'rgba(160, 205, 225, 0.22)';
+    g.lineWidth = 1.5;
+    for (let y = 14; y < H; y += 22) {
+      for (let x = 8 + ((y / 22) % 2) * 14; x < edge - 16; x += 34) {
+        g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 6, y - 4, x + 12, y); g.stroke();
+      }
+    }
+    // Quay wall and piers.
+    g.fillStyle = '#6f7479';
+    g.fillRect(edge - 8, 0, 8, H);
+    for (const y of [70, 210, 470, 560]) {
+      const len = 90 + rnd() * 60;
+      g.fillStyle = '#6b4f35';
+      g.fillRect(edge - 8 - len, y, len, 16);
+      g.strokeStyle = 'rgba(0, 0, 0, 0.25)'; g.lineWidth = 1;
+      for (let x = edge - 8 - len; x < edge - 8; x += 7) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 16); g.stroke(); }
+      // A boat tied up alongside.
+      const bx = edge - 8 - len + 10 + rnd() * (len - 60), by = y + (rnd() < 0.5 ? -20 : 22);
+      g.fillStyle = 'rgba(0, 0, 0, 0.25)';
+      roundRect(g, bx + 3, by + 3, 46, 14, 7); g.fill();
+      g.fillStyle = ['#e8eef3', '#c45a4a', '#d6a12b', '#3d6fb0'][Math.floor(rnd() * 4)];
+      roundRect(g, bx, by, 46, 14, 7); g.fill();
+      g.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      roundRect(g, bx + 12, by + 3, 18, 8, 3); g.fill();
+    }
+  }
+
+  function drawRoadWorks(g, rnd) {
+    const b = geo.box;
+    // Patched asphalt and steel plates on the approaches.
+    for (const k of DIR_KEYS) {
+      if (!geo.hasLeg(k)) continue;
+      g.save(); approachFrame(g, k);
+      const { far, near, R, L0 } = legDims(k);
+      for (let n = 0; n < 2; n++) {
+        const u = far + 40 + rnd() * (near - far - 160), v = -L0 + rnd() * (L0 + R - 30);
+        g.fillStyle = 'rgba(20, 22, 26, 0.45)';
+        g.fillRect(u, v, 34 + rnd() * 30, 18 + rnd() * 10);
+      }
+      const u = far + 60 + rnd() * (near - far - 200), v = -L0 + 4 + rnd() * (L0 + R - 40);
+      g.fillStyle = '#6d747b';
+      g.fillRect(u, v, 30, 26);
+      g.fillStyle = 'rgba(255, 255, 255, 0.25)';
+      for (let x = u + 3; x < u + 30; x += 6) for (let y = v + 3; y < v + 26; y += 6) g.fillRect(x, y, 2, 2);
+      g.restore();
+    }
+    // Cones along the curbs and barrels on the corners.
+    const cone = (x, y) => {
+      g.fillStyle = '#f26b1d';
+      g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x + 5, y + 5); g.lineTo(x - 5, y + 5); g.closePath(); g.fill();
+      g.fillStyle = '#ffffff'; g.fillRect(x - 3, y, 6, 2);
+    };
+    for (let x = 12; x < b.x0 - 20; x += 22) cone(x, b.y0 - 6);
+    for (let y = b.y1 + 24; y < H - 10; y += 22) cone(b.x1 + 8, y);
+    for (const [x, y] of [[b.x0 - 9, b.y1 + 9], [b.x1 + 9, b.y0 - 9]]) {
+      g.fillStyle = '#f26b1d'; g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 3.5, 0, Math.PI * 2); g.stroke();
+    }
+    // ROAD WORK diamond.
+    const sx = W - 34, sy = H - 34;
+    g.save(); g.translate(sx, sy); g.rotate(Math.PI / 4);
+    g.fillStyle = '#f26b1d'; g.fillRect(-11, -11, 22, 22);
+    g.strokeStyle = '#141414'; g.lineWidth = 1.5; g.strokeRect(-9, -9, 18, 18);
+    g.restore();
+    g.fillStyle = '#141414'; g.font = '800 6px Overpass, system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('ROAD', sx, sy - 3); g.fillText('WORK', sx, sy + 4);
+  }
+
+  // Static decor drawn over traffic: tree canopies, building shadows, an overpass.
+  function drawOverlay(g) {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, overlay.width, overlay.height);
+    g.setTransform(scale, 0, 0, scale, 0, 0);
+    const b = geo.box;
+    if (hasDecor('shadows')) {
+      // Tall buildings throw long shadows across the streets.
+      g.fillStyle = 'rgba(8, 12, 20, 0.3)';
+      const left = b.x0 - SIDEWALK, right = b.x1 + SIDEWALK, top = b.y0 - SIDEWALK, bottom = b.y1 + SIDEWALK;
+      for (const [x, y, w, h] of [[0, 0, left, top], [right, 0, W - right, top], [right, bottom, W - right, H - bottom]]) {
+        const dx = 70, dy = 95;
+        g.beginPath();
+        g.moveTo(x + w, y); g.lineTo(x + w + dx, y + dy); g.lineTo(x + w + dx, y + h + dy);
+        g.lineTo(x + dx, y + h + dy); g.lineTo(x, y + h); g.lineTo(x + w, y + h); g.closePath();
+        g.fill();
+      }
+    }
+    if (hasDecor('trees')) {
+      // Canopies over the sidewalks reach into the outer lanes.
+      const rnd = seeded(57 + state.levelIndex);
+      for (const k of DIR_KEYS) {
+        if (!geo.hasLeg(k)) continue;
+        g.save(); approachFrame(g, k);
+        const { far, near, R, L0 } = legDims(k);
+        for (const side of [R + SIDEWALK / 2, -L0 - SIDEWALK / 2]) {
+          for (let u = near - 70 - rnd() * 20; u > far + 30; u -= 58 + rnd() * 30) {
+            const r = 17 + rnd() * 9, v = side + (rnd() - 0.5) * 8;
+            g.fillStyle = 'rgba(16, 26, 14, 0.35)';
+            g.beginPath(); g.arc(u + 4, v + 4, r, 0, Math.PI * 2); g.fill();
+            g.fillStyle = rnd() < 0.5 ? '#35603a' : '#42703f';
+            g.beginPath(); g.arc(u, v, r, 0, Math.PI * 2); g.fill();
+            g.fillStyle = 'rgba(160, 200, 120, 0.18)';
+            g.beginPath(); g.arc(u - r * 0.3, v - r * 0.3, r * 0.55, 0, Math.PI * 2); g.fill();
+          }
+        }
+        g.restore();
+      }
+    }
+    if (hasDecor('overpass')) {
+      const y0 = OVERPASS_Y;
+      g.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      g.fillRect(0, y0 + 10, W, OVERPASS_H);
+      g.fillStyle = '#8e959c';
+      g.fillRect(0, y0, W, OVERPASS_H);
+      g.fillStyle = '#4e555c';
+      g.fillRect(0, y0 + 5, W, OVERPASS_H - 10);
+      g.fillStyle = '#c9cdd1';
+      g.fillRect(0, y0, W, 3); g.fillRect(0, y0 + OVERPASS_H - 3, W, 3);
+      g.fillStyle = '#e3b23c';
+      g.fillRect(0, y0 + OVERPASS_H / 2 - 1, W, 2);
+    }
+  }
+
+  const OVERPASS_Y = 512, OVERPASS_H = 46;
+  // Cars on the overpass: purely scenery, timed from the clock.
+  function drawOverpassTraffic(g) {
+    const t = performance.now() / 1000;
+    for (let i = 0; i < 6; i++) {
+      const east = i % 2 === 0;
+      const speed = 70 + (i * 13) % 40;
+      const span = W + 80;
+      let x = ((t * speed + i * 137) % span) - 40;
+      if (!east) x = W - x;
+      const y = OVERPASS_Y + (east ? OVERPASS_H * 0.72 : OVERPASS_H * 0.28);
+      drawCarBody(g, x, y, east ? 0 : Math.PI, { len: 24, wid: 13, color: CAR_COLORS[(i * 3) % CAR_COLORS.length], truck: false, v: 100, maxV: 100 }, false);
+    }
+  }
+
+  // Light sprites, drawn once: a headlight cone pointing along +x from the
+  // origin, and a round glow.
+  const lightSprites = (() => {
+    const make = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d')); return c; };
+    const cone = make(96, 96, g => {
+      const gr = g.createRadialGradient(8, 48, 2, 8, 48, 86);
+      gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.moveTo(8, 48); g.arc(8, 48, 86, -0.42, 0.42); g.closePath(); g.fill();
+      const g2 = g.createRadialGradient(8, 48, 0, 8, 48, 14);
+      g2.addColorStop(0, 'rgba(0,0,0,0.6)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = g2; g.beginPath(); g.arc(8, 48, 14, 0, Math.PI * 2); g.fill();
+    });
+    const glow = make(64, 64, g => {
+      const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    });
+    return { cone, glow };
+  })();
+
+  // Night: darken the map, then cut out light from streetlights, signals and headlights.
+  function drawNight() {
+    const n = darkness.getContext('2d');
+    n.setTransform(1, 0, 0, 1, 0, 0);
+    n.globalCompositeOperation = 'source-over';
+    n.clearRect(0, 0, darkness.width, darkness.height);
+    n.fillStyle = 'rgba(5, 9, 20, 0.82)';
+    n.fillRect(0, 0, darkness.width, darkness.height);
+    n.setTransform(scale / NIGHT_RES, 0, 0, scale / NIGHT_RES, 0, 0);
+    n.globalCompositeOperation = 'destination-out';
+    const glow = (x, y, r, a) => {
+      n.globalAlpha = a;
+      n.drawImage(lightSprites.glow, x - r, y - r, r * 2, r * 2);
+      n.globalAlpha = 1;
+    };
+    const b = geo.box;
+    for (const [x, y] of [[b.x0 - 10, b.y0 - 10], [b.x1 + 10, b.y0 - 10], [b.x0 - 10, b.y1 + 10], [b.x1 + 10, b.y1 + 10]]) glow(x, y, 85, 0.85);
+    for (const lamp of geo.lamps) glow(lamp.x, lamp.y, 16, 0.9);
+    for (const c of state.cars) {
+      const front = pointAt(c.path, c.s);
+      n.save();
+      n.translate(front.x, front.y);
+      n.rotate(front.angle);
+      n.drawImage(lightSprites.cone, -8, -48);
+      n.restore();
+    }
+    n.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(darkness, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    // Head and tail lights stay visible in the dark.
+    for (const c of state.cars) {
+      const at = pointAt(c.path, c.s - c.len / 2);
+      const fx = Math.cos(at.angle), fy = Math.sin(at.angle), sx = -fy, sy = fx;
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = '#fff6d6';
+        ctx.beginPath(); ctx.arc(at.x + fx * c.len / 2 + sx * side * (c.wid / 2 - 3), at.y + fy * c.len / 2 + sy * side * (c.wid / 2 - 3), 1.8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = c.v < c.maxV * 0.5 ? '#ff3b3b' : '#a32020';
+        ctx.beginPath(); ctx.arc(at.x - fx * c.len / 2 + sx * side * (c.wid / 2 - 3), at.y - fy * c.len / 2 + sy * side * (c.wid / 2 - 3), 1.6, 0, Math.PI * 2); ctx.fill();
+      }
+    }
   }
 
   // Outline of the road leg that traffic heading k arrives over, in k's frame.
@@ -1272,8 +1502,9 @@
     return {
       far: -(HALF + PAD), near,
       R: geo.legRight(k), L0: geo.legLeft(k),
-      L1: geo.out[OPP[k]] * LANE_W,
-      m0: near - MERGE_START, m1: near - MERGE_START - MERGE_LEN,
+      L1: geo.out[OPP[k]] ? geo.mh(k) + geo.out[OPP[k]] * LANE_W : 0,
+      mh: geo.mh(k),
+      m0: near - geo.mergeStart, m1: near - geo.mergeStart - geo.mergeLen,
     };
   }
 
@@ -1286,14 +1517,32 @@
   }
 
   function drawLegMarkings(g, k) {
-    const { far, near, R, L0, m0, m1 } = legDims(k);
+    const { far, near, R, L0, m0, m1, mh } = legDims(k);
     const spec = geo.lanes[k];
     const uStop = near - CROSSWALK - STOP_GAP;
     const outOpp = geo.out[OPP[k]];
-    const exitLanes = Math.round(L0 / LANE_W);
+    const exitLanes = Math.round((L0 - mh) / LANE_W);
 
-    // Double yellow centre line on two-way legs.
-    if (R > 0 && L0 > 0) {
+    if (R > 0 && L0 > 0 && mh > 0) {
+      // Planted median on a divided road, ending short of the crosswalk.
+      const end = near - CROSSWALK - 10;
+      g.fillStyle = '#c7ccd1';
+      roundRect(g, far, -mh, end - far, mh * 2, mh); g.fill();
+      g.fillStyle = '#5d7d4f';
+      roundRect(g, far, -mh + 2, end - far - 2, mh * 2 - 4, mh - 2); g.fill();
+      const rnd = seeded(31 + k.charCodeAt(0));
+      for (let u = end - 24; u > far + 10; u -= 30 + rnd() * 16) {
+        const r = mh * (0.55 + rnd() * 0.3);
+        g.fillStyle = 'rgba(20, 30, 18, 0.3)';
+        g.beginPath(); g.arc(u + 2, 2, r, 0, Math.PI * 2); g.fill();
+        g.fillStyle = rnd() < 0.5 ? '#3f6a3a' : '#4b7a43';
+        g.beginPath(); g.arc(u, 0, r, 0, Math.PI * 2); g.fill();
+      }
+      g.fillStyle = '#e3b23c';
+      g.fillRect(far, mh + 1, uStop + 4 - far, 1.6);
+      g.fillRect(far, -mh - 2.6, end - far, 1.6);
+    } else if (R > 0 && L0 > 0) {
+      // Double yellow centre line on two-way legs.
       const end = spec.length ? uStop + 4 : near - CROSSWALK - 2;
       g.fillStyle = '#e3b23c';
       g.fillRect(far, -2.5, end - far, 1.6);
@@ -1303,31 +1552,31 @@
     g.fillStyle = '#eef0ea';
     // Lane lines on the approach: solid beside a turn lane, dashed between through lanes.
     for (let j = 1; j < spec.length; j++) {
-      const v = LANE_W * j - 1;
+      const v = mh + LANE_W * j - 1;
       const turnLane = spec[j - 1] === 'L';
       if (turnLane) g.fillRect(uStop - 150, v, 150, 2);
       for (let u = far; u < (turnLane ? uStop - 150 : uStop); u += 24) g.fillRect(u, v, 12, 2);
     }
     // Lane lines on the way out; a dropped lane's line stops where it tapers away.
     for (let j = 1; j < exitLanes; j++) {
-      const start = j < outOpp ? far : m1 + MERGE_LEN * 0.35;
-      for (let u = start; u < near - CROSSWALK - 2; u += 24) g.fillRect(u, -LANE_W * j - 1, 12, 2);
+      const start = j < outOpp ? far : m1 + geo.mergeLen * 0.35;
+      for (let u = start; u < near - CROSSWALK - 2; u += 24) g.fillRect(u, -mh - LANE_W * j - 1, 12, 2);
     }
     // Merge arrows in lanes that end.
     g.strokeStyle = 'rgba(238, 240, 234, 0.85)';
     g.lineWidth = 2.5;
     for (let j = Math.max(outOpp, 1); j < exitLanes; j++) {
-      const v = -LANE_W * (j + 0.5), u0 = m0 + 4;
+      const v = -mh - LANE_W * (j + 0.5), u0 = m0 + 4;
       g.beginPath(); g.moveTo(u0, v); g.lineTo(u0 - 16, v); g.lineTo(u0 - 32, v + 10); g.stroke();
       g.beginPath(); g.moveTo(u0 - 37, v + 13); g.lineTo(u0 - 26, v + 12.5); g.lineTo(u0 - 31, v + 5); g.closePath(); g.fill();
     }
 
     // Stop line and crosswalk.
-    if (spec.length) g.fillRect(uStop + 1, 2, 4, R - 2);
+    if (spec.length) g.fillRect(uStop + 1, mh + 2, 4, R - mh - 2);
     for (let v = -L0 + 3; v < R - 3; v += 8) g.fillRect(near - CROSSWALK + 2, v, CROSSWALK - 4, 4);
 
     g.fillStyle = 'rgba(238, 240, 234, 0.85)';
-    spec.forEach((laneSpec, i) => drawLaneArrow(g, uStop - 46, LANE_W * (i + 0.5), laneSpec));
+    spec.forEach((laneSpec, i) => drawLaneArrow(g, uStop - 46, geo.laneOff(k, i), laneSpec));
   }
 
   function drawLaneArrow(g, u, v, spec) {
@@ -1722,6 +1971,12 @@
       ctx.globalAlpha = 1;
     }
     drawEffects(ctx);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, sx, sy);
+    ctx.drawImage(overlay, 0, 0);
+    ctx.restore();
+    if (hasDecor('overpass')) drawOverpassTraffic(ctx);
+    if (state.level.night) drawNight();
     for (const c of state.cars) drawDriverMarks(ctx, c);
     for (const c of state.cars) drawWaitRing(ctx, c);
     drawBacklog(ctx);
@@ -1979,10 +2234,10 @@
     try {
       const f = JSON.parse(localStorage.getItem('intersection-freeplay'));
       if (f && Number.isInteger(f.map) && LEVELS[f.map] && Number.isInteger(f.density) && f.density >= 1 && f.density <= 10) {
-        return { map: f.map, density: f.density, rush: !!f.rush, peds: f.peds !== false };
+        return { map: f.map, density: f.density, rush: !!f.rush, peds: f.peds !== false, night: !!f.night };
       }
     } catch { /* storage unavailable */ }
-    return { map: 2, density: 5, rush: true, peds: true };
+    return { map: 2, density: 5, rush: true, peds: true, night: false };
   }
   function saveFreeplaySettings(f) {
     try { localStorage.setItem('intersection-freeplay', JSON.stringify(f)); } catch { /* storage unavailable */ }
@@ -1999,7 +2254,7 @@
 
   function freeplayLevel(f) {
     const base = LEVELS[f.map];
-    const lvl = { ...base, name: 'Freeplay', goal: Infinity, rate: densityRates(base, f.density), rush: f.rush };
+    const lvl = { ...base, name: 'Freeplay', goal: Infinity, rate: densityRates(base, f.density), rush: f.rush, night: !!f.night };
     if (!f.peds) { lvl.walks = []; lvl.peds = 0; }
     else if (!base.walks) {
       const [ns, ew] = base.street.split(' & ');
@@ -2043,6 +2298,7 @@
       </div>
       <label class="check"><input type="checkbox" id="fp-rush" ${f.rush ? 'checked' : ''}> Rush-hour surges</label>
       <label class="check"><input type="checkbox" id="fp-peds" ${f.peds ? 'checked' : ''}> Pedestrians</label>
+      <label class="check"><input type="checkbox" id="fp-night" ${f.night ? 'checked' : ''}> Night</label>
       <p class="muted">No goal, no patience meter, and crashes never end the game.</p>
       <div class="card-actions">
         <button class="primary" type="button" data-action="freeplay-start">Start freeplay</button>
@@ -2058,6 +2314,7 @@
       density: Number(ui.card.querySelector('#fp-density').value),
       rush: ui.card.querySelector('#fp-rush').checked,
       peds: ui.card.querySelector('#fp-peds').checked,
+      night: ui.card.querySelector('#fp-night').checked,
     };
   }
 
@@ -2068,7 +2325,7 @@
   });
   ui.card.addEventListener('change', e => {
     // Preview the chosen settings behind the setup card.
-    if (e.target.name === 'fp-map' || /^fp-(density|rush|peds)$/.test(e.target.id)) setupFreeplay(readFreeplayForm(), true);
+    if (e.target.name === 'fp-map' || /^fp-(density|rush|peds|night)$/.test(e.target.id)) setupFreeplay(readFreeplayForm(), true);
   });
 
   ui.liveDensity.addEventListener('input', () => {
@@ -2228,7 +2485,8 @@
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.code === 'Escape' && suspended) { resumeSuspended(); return; }
     if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
-    const m = /^Digit([0-9])$/.exec(e.code);
+    // Number row and numeric keypad both work.
+    const m = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
     if (m) { e.preventDefault(); toggleGroup((Number(m[1]) + 9) % 10); }
   });
   document.addEventListener('visibilitychange', () => {
