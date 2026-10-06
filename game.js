@@ -433,7 +433,7 @@
     post: el('post'), level: el('stat-level'), cleared: el('stat-cleared'), goalFill: el('goal-fill'),
     crashes: el('stat-crashes'), time: el('stat-time'),
     patienceFill: el('patience-fill'), patienceValue: el('patience-value'), patienceBar: el('patience-bar'),
-    signals: el('dock'), signalButtons: [], heads: [], walkBlock: {}, monitorAt: -1, rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
+    signals: el('signals'), signalButtons: [], heads: [], walkBlock: {}, monitorAt: -1, rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
     pauseBtn: el('pause-btn'), levelsBtn: el('levels-btn'),
     score: el('stat-score'), combo: el('stat-combo'), scoreBox: el('score-box'), fpBest: el('fp-best'),
     menu: el('menu'), game: el('game'), menuStars: el('menu-stars'), menuBest: el('menu-best'),
@@ -2137,10 +2137,9 @@
     return { NS: ns, EW: ew };
   }
 
-  // The signal dock: one block per direction of traffic, laid out like the
-  // map's corners (southbound top left, westbound top right, eastbound
-  // bottom left, northbound bottom right). Each block is also a monitor of
-  // how many are waiting there.
+  // Signal buttons sit on the map, on the block beside each direction's
+  // waiting line. Each cluster's label is also a monitor of how many are
+  // waiting there and for how long.
   const DOCK_ORDER = ['S', 'W', 'E', 'N'];
   const DIR_ARROW = { N: '↑', S: '↓', E: '→', W: '←' };
 
@@ -2188,13 +2187,16 @@
           <span class="count" aria-hidden="true" hidden>0</span>
         </button>`;
       });
-      return `<div class="head" data-dir="${k}" data-level="ok">
-        <div class="head-top">
-          <span class="head-name">${DIRS[k].name} <span class="head-arrow">${DIR_ARROW[k]}</span></span>
-          <span class="head-busiest">Busiest</span>
-        </div>
-        <div class="head-lamps">${carButtons.join('')}${walkButtons.join('')}</div>
-        <div class="head-wait"><span class="head-count">0 waiting</span><span class="head-oldest"></span></div>
+      // Corner of the block on the driver's right, just before the intersection.
+      const { d, r } = DIRS[k];
+      const u = -geo.ext(k).near - SIDEWALK, v = geo.legRight(k) + SIDEWALK;
+      const x = CX + d.x * u + r.x * v, y = CY + d.y * u + r.y * v;
+      const ex = Math.sign(-d.x + r.x), ey = Math.sign(-d.y + r.y);
+      return `<div class="cluster head" data-dir="${k}" data-level="ok" data-x="${ex > 0 ? 'right' : 'left'}" data-y="${ey > 0 ? 'down' : 'up'}"
+          style="left: ${(x / W) * 100}%; top: ${(y / H) * 100}%">
+        <span class="cluster-name"><span class="head-name">${DIRS[k].name} ${DIR_ARROW[k]}</span><span class="head-busiest">Busiest</span></span>
+        <div class="cluster-buttons">${carButtons.join('')}${walkButtons.join('')}</div>
+        <span class="cluster-wait"><span class="head-count">0</span><span class="head-word"> waiting</span><span class="head-oldest"></span></span>
       </div>`;
     });
     ui.signals.dataset.count = approaches.length;
@@ -2241,8 +2243,8 @@
     const angry = state.level.angry;
     for (const head of ui.heads) {
       const m = by[head.dataset.dir];
-      head.querySelector('.head-count').textContent = m.total === 1 ? '1 waiting' : `${m.total} waiting`;
-      head.querySelector('.head-oldest').textContent = m.oldest >= 1 ? `longest ${Math.floor(m.oldest)}s` : '';
+      head.querySelector('.head-count').textContent = m.total;
+      head.querySelector('.head-oldest').textContent = m.oldest >= 1 ? ` · ${Math.floor(m.oldest)}s` : '';
       head.dataset.level = m.oldest > angry ? 'bad' : m.oldest > angry * 0.5 ? 'warn' : 'ok';
       head.dataset.busiest = head === busiest && state.mode === 'running' ? 'true' : 'false';
     }
@@ -2415,10 +2417,10 @@
       <p class="eyebrow">How to play</p>
       <h2>Run the signals</h2>
       <ul class="help">
-        <li>The dock under the map has one block per direction of traffic, in the same corner as its queue. Each button turns a signal green; tap again to send it through yellow to red.</li>
+        <li>The buttons beside each waiting line control those cars. Each one turns a signal green; tap again to send it through yellow to red.</li>
         <li>Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal.</li>
         <li>A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Two conflicting greens cause crashes.</li>
-        <li>Each block counts who's waiting there and how long the longest wait is; the busiest direction is marked. Numbers on the buttons count who's waiting for that signal.</li>
+        <li>Under each set of buttons: how many are waiting there and the longest wait so far. The busiest corner is marked, and the numbers on the buttons count who's waiting for that signal.</li>
         <li>Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow. Turning cars wait for people; straight-through traffic on green does not.</li>
         <li>Clear cars without anyone honking to build a combo up to ×3, and clear a whole queue in one green for a Green Wave bonus.</li>
         <li>Keys 1–9 and 0 (number row or keypad) work the buttons in order. <kbd>P</kbd> pauses.</li>
