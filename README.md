@@ -57,7 +57,7 @@ Progress and best times are saved in the browser. Number keys <kbd>1</kbd>–<kb
 
 ## Freeplay
 
-Pick **Freeplay** at the bottom of the level list to play any of the five maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest, and Gridlock sends nearly four times as many cars), whether rush-hour surges happen, and whether pedestrians cross. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic while you play, and your settings are remembered.
+Pick **Freeplay** at the bottom of the level list to play any of the seven maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest, and Gridlock sends nearly four times as many cars), whether rush-hour surges happen, and whether pedestrians cross. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic while you play, and your settings are remembered.
 
 ## How it works
 
