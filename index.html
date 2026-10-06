@@ -23,6 +23,7 @@
       <span class="goal-bar" aria-hidden="true"><span id="goal-fill"></span></span>
     </div>
     <div class="readout"><span class="label">Crashes</span><span class="value" id="stat-crashes" data-level="ok">0 / 3</span></div>
+    <div class="readout score-readout" id="score-box"><span class="label">Score</span><span class="value" id="stat-score">0</span><span class="combo" id="stat-combo" hidden>×1.5</span></div>
     <div class="readout"><span class="label">Time</span><span class="value" id="stat-time">0:00</span></div>
     <div class="readout patience" id="patience-row">
       <span class="label">City patience</span>
@@ -46,6 +47,7 @@
     <label class="label" for="live-density">Traffic density</label>
     <input type="range" id="live-density" min="1" max="10" step="1" value="5">
     <output id="live-density-value" for="live-density">Normal (5)</output>
+    <span class="fp-best" id="fp-best"></span>
   </div>
 
   <div class="toolbar">
@@ -53,7 +55,7 @@
     <button id="levels-btn" type="button">Levels</button>
   </div>
 
-  <p class="hint">The buttons beside each waiting line control those cars. Arrows show where the cars are headed: straight (and right turns), or left. Tap a button to turn it green, tap again to send it through yellow to red. A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow instead of stopping. Hazard lights or a … bubble mean a driver made a mistake; those delays never cost you patience. On later levels, the walking-figure buttons give people a Walk signal. Turning cars wait for them, but straight-through traffic on green will not. On a keyboard, the numbers on the buttons work too. <kbd>P</kbd> pauses.</p>
+  <p class="hint">The buttons beside each waiting line control those cars. Arrows show where the cars are headed: straight (and right turns), or left. Tap a button to turn it green, tap again to send it through yellow to red. A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow instead of stopping. Hazard lights or a … bubble mean a driver made a mistake; those delays never cost you patience. Every car you clear scores points; keep cars moving without anyone honking to build a combo up to ×3, and clear a whole queue in one green for a Green Wave bonus. On later levels, the walking-figure buttons give people a Walk signal. Turning cars wait for them, but straight-through traffic on green will not. On a keyboard, the numbers on the buttons work too. <kbd>P</kbd> pauses.</p>
 </main>
 <script src="game.js"></script>
 </body>

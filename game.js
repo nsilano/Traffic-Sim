@@ -33,6 +33,15 @@
   const MISTAKE_KINDS = new Set(['distracted', 'stall', 'bump']);
   const DRAIN_PER_ANGRY = 1.1;   // patience lost per second per honking driver
   const MAX_DRAIN = 6;           // cap on patience lost per second
+  // Scoring
+  const CAR_POINTS = 10;         // per car cleared, times the combo multiplier
+  const COMBO_STEP = 10;         // cars in a row (with no one honking) per +0.5x
+  const MAX_COMBO = 3;
+  const WAVE_MIN = 4;            // cars through one green to earn a Green Wave
+  const WAVE_POINTS = 5;         // bonus per car in the wave
+  const CRASH_PENALTY = 100;
+  const PED_HIT_PENALTY = 150;
+  const STAR_PATIENCE = 50;      // third star: patience never drops below this
   const DRAIN_PER_BLOCKED = 4;   // per second per approach backed up off-screen
   const REFILL_PER_CAR = 1.6;
   const CRASH_PATIENCE = 12;
@@ -418,6 +427,7 @@
     patienceFill: el('patience-fill'), patienceValue: el('patience-value'), patienceBar: el('patience-bar'),
     signals: el('signals'), signalButtons: [], rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
     pauseBtn: el('pause-btn'), levelsBtn: el('levels-btn'),
+    score: el('stat-score'), combo: el('stat-combo'), scoreBox: el('score-box'), fpBest: el('fp-best'),
     freeplayBar: el('freeplay-bar'), patienceRow: el('patience-row'), liveDensity: el('live-density'), liveDensityValue: el('live-density-value'),
   };
 
@@ -428,10 +438,13 @@
       if (p && Number.isInteger(p.unlocked)) {
         const best = {};
         for (const [k, v] of Object.entries(p.best || {})) if (Number.isFinite(v) && v >= 0) best[k] = v;
-        return { unlocked: Math.min(LEVELS.length, Math.max(1, p.unlocked)), best };
+        const stars = {}, scores = {};
+        for (const [k, v] of Object.entries(p.stars || {})) if (Array.isArray(v) && v.length === 3) stars[k] = v.map(Boolean);
+        for (const [k, v] of Object.entries(p.scores || {})) if (Number.isFinite(v) && v >= 0) scores[k] = v;
+        return { unlocked: Math.min(LEVELS.length, Math.max(1, p.unlocked)), best, stars, scores };
       }
     } catch { /* storage unavailable */ }
-    return { unlocked: 1, best: {} };
+    return { unlocked: 1, best: {}, stars: {}, scores: {} };
   }
   function saveProgress() {
     try { localStorage.setItem('intersection-progress', JSON.stringify(progress)); } catch { /* storage unavailable */ }
@@ -454,7 +467,7 @@
       mode: 'intro', // intro | running | paused | won | lost
       t: 0, cleared: 0, crashes: 0, patience: 100,
       groups: [
-        ...level.groups.map((g, i) => ({ ...g, kind: 'car', state: i === 0 ? 'green' : 'red', timer: 0, cycle: 0, busy: 0 })),
+        ...level.groups.map((g, i) => ({ ...g, kind: 'car', state: i === 0 ? 'green' : 'red', timer: 0, cycle: 0, busy: 0, passed: 0 })),
         ...(level.walks || []).map(w => ({ ...w, kind: 'walk', state: 'red', timer: 0, cycle: 0, busy: 0 })),
       ],
       cars: [], peds: [], wrecks: [], particles: [], flashes: [],
@@ -463,13 +476,17 @@
       shake: 0, pulse: 0,
       failAt: null, failReason: '',
       hover: -1,
+      score: 0, streak: 0, mult: 1, minPatience: 100, waitSum: 0, worstWait: 0,
+      popups: [], banners: [], bestShown: false,
     };
   }
 
   function prefill() {
     for (let i = 0; i < 350; i++) step(0.02, true);
     state.t = 0; state.cleared = 0; state.patience = 100;
-    state.particles = []; state.flashes = [];
+    state.particles = []; state.flashes = []; state.popups = []; state.banners = [];
+    state.score = 0; state.streak = 0; state.mult = 1; state.minPatience = 100; state.waitSum = 0; state.worstWait = 0;
+    for (const g of state.groups) g.passed = 0;
     for (const c of state.cars) c.wait = 0;
     for (const p of state.peds) p.wait = 0;
   }
@@ -479,8 +496,8 @@
     if (state.mode !== 'running' || state.failAt !== null) return;
     const g = state.groups[i];
     if (!g) return;
-    if (g.state === 'green') { g.state = 'yellow'; g.timer = 0; g.cycle++; }
-    else if (g.state === 'red') g.state = 'green';
+    if (g.state === 'green') { greenWave(i); g.state = 'yellow'; g.timer = 0; g.cycle++; }
+    else if (g.state === 'red') { g.state = 'green'; g.passed = 0; }
   }
 
   function updateGroups(dt) {
@@ -720,6 +737,7 @@
       const before = c.s;
       c.s += c.v * dt;
       if (mustStop && before <= p.stopS && c.s > p.stopS) { c.s = p.stopS; c.v = 0; }
+      if (before <= p.stopS && c.s > p.stopS && g.state === 'green') g.passed++;
 
       if (c.v < 4 && c.s <= p.stopS + 1 && !mistakeLanes.has(p.laneKey)) c.wait += dt;
     }
@@ -727,10 +745,8 @@
     // Cars that left the map count as cleared.
     const keep = [];
     for (const c of state.cars) {
-      if (c.s - c.len > c.path.len) {
-        state.cleared++;
-        state.patience = Math.min(100, state.patience + REFILL_PER_CAR);
-      } else keep.push(c);
+      if (c.s - c.len > c.path.len) carCleared(c);
+      else keep.push(c);
     }
     state.cars = keep;
   }
@@ -802,6 +818,104 @@
       if (rear < c.path.A && (tails[k] === undefined || rear < tails[k])) tails[k] = rear;
     }
     return tails;
+  }
+
+  // ---- Scoring ----
+  const fmtNum = n => Math.round(n).toLocaleString('en-US');
+
+  function addPoints(n, at, color) {
+    state.score = Math.max(0, state.score + n);
+    if (at) state.popups.push({ x: at.x, y: at.y, text: (n > 0 ? '+' : '') + fmtNum(n), color, t: 0, big: Math.abs(n) >= 40 });
+    if (n > 0) pulseScore();
+    checkFreeplayBest();
+  }
+
+  function banner(text, color) {
+    state.banners.push({ text, color, t: 0 });
+    if (state.banners.length > 3) state.banners.shift();
+  }
+
+  function carCleared(c) {
+    state.cleared++;
+    state.patience = Math.min(100, state.patience + REFILL_PER_CAR);
+    state.waitSum += c.wait;
+    state.worstWait = Math.max(state.worstWait, c.wait);
+    state.streak++;
+    const mult = Math.min(MAX_COMBO, 1 + 0.5 * Math.floor(state.streak / COMBO_STEP));
+    if (mult > state.mult) banner(`${state.streak} in a row · ×${mult}`, '#f2a91f');
+    state.mult = mult;
+    // Points float up where the car leaves the map.
+    addPoints(Math.round(CAR_POINTS * state.mult), pointAt(c.path, c.path.len - PAD - 22), '#f2f6f3');
+  }
+
+  function breakStreak() {
+    if (state.streak >= COMBO_STEP) banner('Streak lost', '#ff8a8d');
+    state.streak = 0;
+    state.mult = 1;
+  }
+
+  // Switching a group off after it emptied its whole queue earns a bonus.
+  function greenWave(i) {
+    const g = state.groups[i];
+    if (g.kind !== 'car' || g.passed < WAVE_MIN || state.mode !== 'running') return;
+    const waiting = state.cars.some(c => c.path.group === i && c.s <= c.path.stopS && c.s > c.path.stopS - 140);
+    if (waiting) return;
+    const bonus = g.passed * WAVE_POINTS;
+    const lamp = geo.lamps.find(l => l.group === i);
+    addPoints(bonus, lamp ? { x: lamp.x, y: lamp.y - 12 } : null, '#30c070');
+    banner(`Green wave · ${g.passed} cars · +${bonus}`, '#30c070');
+  }
+
+  // ---- Personal bests ----
+  const fpKey = f => `${f.map}-${f.density}`;
+  function loadFreeplayBests() {
+    try {
+      const b = JSON.parse(localStorage.getItem('intersection-freeplay-bests'));
+      if (b && typeof b === 'object') return b;
+    } catch { /* storage unavailable */ }
+    return {};
+  }
+  const freeplayBests = loadFreeplayBests();
+  let bestsDirty = false;
+  function saveFreeplayBests() {
+    if (!bestsDirty) return;
+    bestsDirty = false;
+    try { localStorage.setItem('intersection-freeplay-bests', JSON.stringify(freeplayBests)); } catch { /* storage unavailable */ }
+  }
+  function currentFreeplayBest() {
+    const b = state.freeplay && freeplayBests[fpKey(state.freeplay)];
+    return { score: Number.isFinite(b?.score) ? b.score : 0, cpm: Number.isFinite(b?.cpm) ? b.cpm : 0 };
+  }
+  function checkFreeplayBest() {
+    if (!state.freeplay || state.mode !== 'running') return;
+    const key = fpKey(state.freeplay);
+    const best = currentFreeplayBest();
+    const entry = freeplayBests[key] ||= {};
+    if (state.score > best.score) {
+      if (best.score > 0 && !state.bestShown) { state.bestShown = true; banner('New best score!', '#f2a91f'); }
+      entry.score = state.score; bestsDirty = true;
+    }
+    if (state.t >= 60) {
+      const cpm = carsPerMinute();
+      if (cpm > best.cpm) { entry.cpm = Math.round(cpm * 10) / 10; bestsDirty = true; }
+    }
+  }
+  setInterval(saveFreeplayBests, 2000);
+
+  const carsPerMinute = () => (state.t > 0 ? (state.cleared / state.t) * 60 : 0);
+  const avgWait = () => (state.cleared ? state.waitSum / state.cleared : 0);
+  function statsLine() {
+    return `${carsPerMinute().toFixed(1)} cars/min · average wait ${avgWait().toFixed(1)} s · longest wait ${state.worstWait.toFixed(1)} s`;
+  }
+
+  // Stars: clear the goal, no crashes, patience never below STAR_PATIENCE.
+  function starsEarned() {
+    return [state.cleared >= state.level.goal, state.crashes === 0, state.minPatience >= STAR_PATIENCE];
+  }
+  const STAR_GOALS = ['Clear the goal', 'No crashes', `Patience never below ${STAR_PATIENCE}%`];
+  function starRow(stars, animate) {
+    return `<span class="stars${animate ? ' animate' : ''}" aria-label="${stars.filter(Boolean).length} of 3 stars">${
+      stars.map((on, i) => `<span class="star" data-on="${on}" style="--i:${i}">★</span>`).join('')}</span>`;
   }
 
   // ---- Pedestrians ----
@@ -900,7 +1014,7 @@
       state.particles.push({ kind: 'spark', x: at.x, y: at.y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 0.3 + Math.random() * 0.3 });
     }
     state.flashes.push({ x: at.x, y: at.y, t: 0, kind: 'hit' });
-    registerCrash('Someone was hit in a crosswalk.');
+    registerCrash('Someone was hit in a crosswalk.', at, PED_HIT_PENALTY);
   }
 
   // ---- Crashes ----
@@ -955,10 +1069,12 @@
       });
     }
     state.flashes.push({ x: mid.x, y: mid.y, t: 0 });
-    registerCrash('');
+    registerCrash('', mid, CRASH_PENALTY);
   }
 
-  function registerCrash(note) {
+  function registerCrash(note, at, penalty) {
+    breakStreak();
+    addPoints(-penalty, at ? { x: at.x, y: at.y - 18 } : null, '#ff8a8d');
     state.shake = reducedMotion ? 0 : 0.5;
     state.crashes++;
     state.patience = Math.max(0, state.patience - CRASH_PATIENCE);
@@ -998,6 +1114,12 @@
     state.particles = state.particles.filter(p => p.life < p.max);
     for (const fl of state.flashes) fl.t += dt;
     state.flashes = state.flashes.filter(fl => fl.t < 1.4);
+    for (const p of state.popups) p.t += dt;
+    state.popups = state.popups.filter(p => p.t < (p.big ? 1.4 : 0.9));
+    if (state.banners.length) {
+      state.banners[0].t += dt;
+      if (state.banners[0].t > 1.8) state.banners.shift();
+    }
     state.shake = Math.max(0, state.shake - dt);
   }
 
@@ -1013,16 +1135,23 @@
       const grp = state.groups[p.group];
       const committed = c.commit === grp.cycle && grp.state !== 'green';
       if ((c.s > p.stopS + 0.5 || c.racing || committed) && c.s - c.len < p.exitStart) grp.busy++;
-      if (isAngry(c)) angry++;
+      if (isAngry(c)) {
+        angry++;
+        if (!c.honked) { c.honked = true; breakStreak(); }
+      }
     }
     for (const ped of state.peds) {
       if (ped.state === 'crossing' && ped.v > ped.cw.road0 - 4 && ped.v < ped.cw.road1 + 4) state.groups[ped.cw.group].busy++;
-      if (ped.state === 'waiting' && ped.wait > state.level.angry) angry++;
+      if (ped.state === 'waiting' && ped.wait > state.level.angry) {
+        angry++;
+        if (!ped.honked) { ped.honked = true; breakStreak(); }
+      }
     }
     let blocked = 0;
     for (const k of DIR_KEYS) if (state.spawners[k].blockedFor > 1) blocked++;
     const drain = Math.min(MAX_DRAIN, angry * DRAIN_PER_ANGRY + blocked * DRAIN_PER_BLOCKED);
     state.patience = Math.max(0, state.patience - drain * dt);
+    state.minPatience = Math.min(state.minPatience, state.patience);
     if (!hasLimits()) { state.patience = Math.max(0, state.patience); return; }
 
     if (state.failAt === null) {
@@ -1597,6 +1726,41 @@
     for (const c of state.cars) drawWaitRing(ctx, c);
     drawBacklog(ctx);
     drawStreetSigns(ctx);
+    drawScorePopups(ctx);
+  }
+
+  function drawScorePopups(g) {
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const p of state.popups) {
+      const life = p.big ? 1.4 : 0.9;
+      const k = p.t / life;
+      g.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+      g.font = `800 ${p.big ? 15 : 11}px Overpass, system-ui, sans-serif`;
+      const y = p.y - 6 - k * 22;
+      g.lineWidth = 3; g.strokeStyle = 'rgba(22, 27, 33, 0.9)';
+      g.strokeText(p.text, p.x, y);
+      g.fillStyle = p.color;
+      g.fillText(p.text, p.x, y);
+    }
+    g.globalAlpha = 1;
+    const b = state.banners[0];
+    if (b) {
+      const pop = Math.min(1, b.t / 0.18);
+      const alpha = b.t > 1.4 ? 1 - (b.t - 1.4) / 0.4 : 1;
+      g.save();
+      g.globalAlpha = Math.max(0, alpha);
+      g.translate(CX, 70);
+      g.scale(0.7 + 0.3 * pop, 0.7 + 0.3 * pop);
+      g.font = '800 17px Overpass, system-ui, sans-serif';
+      const w = g.measureText(b.text).width + 28;
+      g.fillStyle = 'rgba(22, 27, 33, 0.88)';
+      roundRect(g, -w / 2, -16, w, 32, 16); g.fill();
+      g.strokeStyle = b.color; g.lineWidth = 2;
+      roundRect(g, -w / 2, -16, w, 32, 16); g.stroke();
+      g.fillStyle = b.color;
+      g.fillText(b.text, 0, 1);
+      g.restore();
+    }
   }
 
   // Green street-name plates at the map edges, over each street.
@@ -1717,6 +1881,13 @@
     ui.patienceRow.hidden = !!fp;
     if (fp) ui.liveDensityValue.textContent = densityName(fp.density);
     ui.time.textContent = fmtTime(state.t);
+    ui.score.textContent = fmtNum(state.score);
+    ui.combo.hidden = state.mult <= 1;
+    ui.combo.textContent = `×${state.mult}`;
+    if (fp) {
+      const best = currentFreeplayBest();
+      ui.fpBest.textContent = `${carsPerMinute().toFixed(1)}/min · best ${fmtNum(best.score)} pts, ${best.cpm.toFixed(1)}/min`;
+    }
     const p = Math.ceil(state.patience);
     ui.patienceFill.style.width = state.patience + '%';
     ui.patienceValue.textContent = p + '%';
@@ -1738,6 +1909,12 @@
     if (state.rush) ui.rush.textContent = `Rush: ${DIRS[state.rush.dir].name.toLowerCase()} traffic`;
     ui.pauseBtn.disabled = state.mode !== 'running' && state.mode !== 'paused';
     ui.pauseBtn.textContent = state.mode === 'paused' ? 'Resume' : 'Pause';
+  }
+
+  function pulseScore() {
+    ui.scoreBox.classList.remove('pop');
+    void ui.scoreBox.offsetWidth; // restart the animation
+    ui.scoreBox.classList.add('pop');
   }
 
   // ---- Screens ----
@@ -1775,7 +1952,10 @@
     const rows = LEVELS.map((lvl, i) => {
       const locked = i + 1 > progress.unlocked;
       const best = progress.best[i];
-      const status = locked ? 'Locked' : best !== undefined ? `Done in ${fmtTime(best)}` : 'Open';
+      const stars = progress.stars[i];
+      const status = locked ? 'Locked'
+        : stars ? `${starRow(stars)}<span class="level-score">${fmtNum(progress.scores[i] || 0)}</span>`
+        : 'Open';
       return `<button class="level-row" type="button" data-action="pick" data-level="${i}" ${locked ? 'disabled' : ''}>
         <span class="level-num">${i + 1}</span>
         <span class="level-info"><span class="level-name">${lvl.name}</span><span class="level-desc">${levelSummary(lvl)}</span></span>
@@ -1916,6 +2096,7 @@
       <p>${lvl.intro}</p>
       <p class="muted">${lvl.tip}</p>
       <p class="goal">Clear <strong>${lvl.goal}</strong> cars. ${MAX_CRASHES} crashes or an empty patience meter ends the shift.</p>
+      <ul class="star-goals">${STAR_GOALS.map((g, j) => `<li><span class="star" data-on="${!!progress.stars[state.levelIndex]?.[j]}">★</span>${g}</li>`).join('')}</ul>
       <div class="card-actions">
         <button class="primary" type="button" data-action="start">Start shift</button>
         <button type="button" data-action="levels">All levels</button>
@@ -1933,12 +2114,23 @@
     const prev = progress.best[i];
     if (prev === undefined || state.t < prev) progress.best[i] = state.t;
     progress.unlocked = Math.max(progress.unlocked, Math.min(LEVELS.length, i + 2));
+    const stars = starsEarned();
+    const had = progress.stars[i] || [false, false, false];
+    progress.stars[i] = had.map((h, j) => h || stars[j]);
+    const prevScore = progress.scores[i] || 0;
+    const newBest = state.score > prevScore;
+    if (newBest) progress.scores[i] = state.score;
     saveProgress();
     const hasNext = i + 1 < LEVELS.length;
+    const starNotes = STAR_GOALS.map((g, j) => `<li><span class="star" data-on="${stars[j]}">★</span>${g}</li>`).join('');
     showCard(`
       <p class="eyebrow">Level ${i + 1} complete</p>
+      ${starRow(stars, true)}
       <h2>${hasNext ? 'Intersection cleared' : 'You ran every intersection'}</h2>
+      <p class="final-score"><strong>${fmtNum(state.score)}</strong> points${newBest ? ' <span class="new-best">New best!</span>' : ` · best ${fmtNum(prevScore)}`}</p>
+      <ul class="star-goals">${starNotes}</ul>
       <p>You moved <strong>${state.cleared}</strong> cars in <strong>${fmtTime(state.t)}</strong> with <strong>${state.crashes}</strong> ${state.crashes === 1 ? 'crash' : 'crashes'}.</p>
+      <p class="muted">${statsLine()}</p>
       ${hasNext ? `<p class="muted">Next: ${LEVELS[i + 1].name}. ${levelSummary(LEVELS[i + 1])}.</p>` : '<p class="muted">Every level is unlocked. Try to beat your times.</p>'}
       <div class="card-actions">
         ${hasNext ? '<button class="primary" type="button" data-action="next">Next level</button>' : ''}
@@ -1953,7 +2145,8 @@
       <p class="eyebrow">${state.freeplay ? 'Freeplay' : `Level ${state.levelIndex + 1}`} · ${state.level.street}</p>
       <h2>Shift over</h2>
       <p>${state.failReason}</p>
-      <p class="muted">${state.freeplay ? `You cleared ${state.cleared} cars` : `You cleared ${state.cleared} of ${state.level.goal} cars`} in ${fmtTime(state.t)}.</p>
+      <p class="muted">${state.freeplay ? `You cleared ${state.cleared} cars` : `You cleared ${state.cleared} of ${state.level.goal} cars`} in ${fmtTime(state.t)}, scoring ${fmtNum(state.score)} points.</p>
+      <p class="muted">${statsLine()}</p>
       <div class="card-actions">
         <button class="primary" type="button" data-action="retry">Try again</button>
         ${state.freeplay ? '<button type="button" data-action="freeplay-setup">Change settings</button>' : ''}
@@ -1964,7 +2157,8 @@
   function togglePause() {
     if (state.mode === 'running') {
       state.mode = 'paused';
-      showCard(`<h2>Paused</h2><p class="muted">Traffic is frozen.</p>
+      showCard(`<h2>Paused</h2><p class="muted">Traffic is frozen. ${fmtNum(state.score)} points so far.</p>
+        <p class="muted">${statsLine()}</p>
         <div class="card-actions">
           <button class="primary" type="button" data-action="resume">Resume</button>
           ${state.freeplay ? '<button type="button" data-action="freeplay-setup">Change settings</button>' : ''}

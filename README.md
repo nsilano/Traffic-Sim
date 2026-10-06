@@ -24,6 +24,14 @@ Every car gets a driver with its own habits:
 - **Yellow-light racers** (10% of drivers) wear an amber lightning bolt and outline from the moment they appear. When their light turns yellow, they speed up to beat it instead of stopping. They count as traffic in the box, so the red **!** still covers them. If one misjudges and can still stop when the light turns red, it gives up and stops.
 - **Mistakes:** some drivers are distracted at green (a … bubble), some stall (hazard lights), and some tailgaters tap the car ahead in the queue ("BUMP", hazard lights on both). These delays never cost patience and never count as crashes.
 
+## Score, combos and stars
+
+- Every car you clear scores 10 points, times your combo. The combo grows by ×0.5 for every 10 cars in a row cleared without anyone starting to honk, up to ×3. A honking driver or pedestrian, or a crash, resets it.
+- **Green Wave:** switch a signal off after it has sent at least 4 cars through and nobody is left waiting in its lanes, and you get 5 bonus points per car.
+- Crashes cost 100 points and hitting a pedestrian costs 150.
+- Each level awards up to three stars: clear the goal, finish with no crashes, and never let city patience drop below 50%. Stars and your best score show in the level list; stars you've earned stay earned.
+- Result screens show cars per minute, average wait and longest wait. In freeplay, your best score and best cars per minute are kept for each map and density.
+
 ## Pedestrians
 
 From level 3 on, people wait at the corners. Each crosswalk has a Walk button (a walking figure on a rounded-square button) beside the nearest waiting cars. On Walk they cross; when you switch it off, the hand flashes for a few seconds so the last walkers can finish.
