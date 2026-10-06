@@ -24,21 +24,40 @@ Every car gets a driver with its own habits:
 - **Yellow-light racers** (10% of drivers) wear an amber lightning bolt and outline from the moment they appear. When their light turns yellow, they speed up to beat it instead of stopping. They count as traffic in the box, so the red **!** still covers them. If one misjudges and can still stop when the light turns red, it gives up and stops.
 - **Mistakes:** some drivers are distracted at green (a … bubble), some stall (hazard lights), and some tailgaters tap the car ahead in the queue ("BUMP", hazard lights on both). These delays never cost patience and never count as crashes.
 
+## Pedestrians
+
+From level 3 on, people wait at the corners. Each crosswalk has a Walk button (a walking figure on a rounded-square button) beside the nearest waiting cars. On Walk they cross; when you switch it off, the hand flashes for a few seconds so the last walkers can finish.
+
+- Turning drivers stop for people in the crosswalk.
+- Straight-through traffic on green does not. Giving Walk across a street whose straight traffic is moving gets someone hit, which counts as a crash. The red **!** warns you before you do it.
+- People look before stepping off the curb and wait for a car stopped in their way. Waiting too long makes them lose patience, the same as drivers.
+
+## Road layouts
+
+Levels mix up the streets instead of only adding lanes:
+
+- **One-way streets:** every lane heads the same way, and some turns are impossible.
+- **T-junctions:** one road ends, so its drivers can only turn left or right.
+- **Lane drops:** fewer lanes leave the intersection than arrive. The outer lane tapers into the next after the box. Drivers already in the continuing lane go first, and merging drivers wait their turn.
+- **Don't block the box:** drivers won't enter the intersection unless there's room on the far side, so a backed-up merge can hold up a green light.
+
 ## Levels
 
-| # | Name | Lanes per direction (Main St / cross street) | Switches |
-|---|------|------|------|
-| 1 | First Shift | 1 / 1 | Main St, 1st Ave |
-| 2 | Turn Lanes | left + 1 / left + 1 | Straight and left arrow for each street |
-| 3 | Main St Widens | left + 2 / left + 1 | Same four, heavier Main St traffic |
-| 4 | Split Phases | left + 2 / left + 2 | Northbound and southbound controlled separately, rush-hour surges |
-| 5 | Downtown Rush | left + 3 / left + 2 | Every direction and turn separately (8 switches) |
+| # | Name | Layout | Switches |
+|---|------|--------|----------|
+| 1 | First Shift | 1 lane each way | 2 |
+| 2 | Turn Lanes | Left-turn lanes | 4 |
+| 3 | Crosswalks | Left-turn lanes, pedestrians | 6 |
+| 4 | One Way | Two-way Main St, three-lane one-way avenue | 5 |
+| 5 | Harbor Merge | T-junction; Main St drops to one lane northbound | 5 |
+| 6 | Split Phases | Directions controlled separately; the avenue drops a lane both ways | 8 |
+| 7 | Downtown Rush | Every direction and turn separately; Main St drops a lane northbound | 10 |
 
-Progress and best times are saved in the browser.
+Progress and best times are saved in the browser. Number keys <kbd>1</kbd>–<kbd>9</kbd> and <kbd>0</kbd> work the switches in order.
 
 ## Freeplay
 
-Pick **Freeplay** at the bottom of the level list to play any of the five maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest) and whether rush-hour surges happen. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic while you play, and your settings are remembered.
+Pick **Freeplay** at the bottom of the level list to play any of the five maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest, and Gridlock sends nearly four times as many cars), whether rush-hour surges happen, and whether pedestrians cross. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic while you play, and your settings are remembered.
 
 ## How it works
 
@@ -50,7 +69,6 @@ Pick **Freeplay** at the bottom of the level list to play any of the five maps w
 
 ## Ideas for next steps
 
-- Pedestrians and walk signals
 - Emergency vehicles that need a clear path
 - Permissive left turns (yield on a green ball)
 - A second intersection down the block with timing between the two

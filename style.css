@@ -525,3 +525,6 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .bar-fill, .goal-bar span, .map-sig { transition: none; }
 }
+
+/* Walk buttons: rounded squares, so they read differently from car signals. */
+.map-sig.walk { border-radius: 11px; }
