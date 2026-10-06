@@ -4,11 +4,11 @@ A browser game where you run the traffic signals at a city intersection. Open `i
 
 ## How to play
 
-The game opens on a main menu styled as a traffic signal: the green lamp plays your next shift (or resumes one in progress), amber opens Freeplay, red opens Settings (reset progress). Below it are Levels, Records (stars and best scores) and How to play.
+The game opens on a main menu styled as a traffic signal, which cycles green, amber and red while you're there: the green lamp plays your next shift (or resumes one in progress), amber opens Freeplay, red opens Settings (reset progress). Below it are Levels, Records (stars and best scores) and How to play.
 
 In a shift, a yellow band at the top shows the score, combo, cars cleared, crashes, time and city patience. The signal buttons sit on the map itself, in a set per direction of traffic placed on the corner right beside that queue. Each button turns its signal green, or sends a green one through yellow to red. Arrows show where those cars go; walking-figure buttons are Walk signals. Number keys <kbd>1</kbd>–<kbd>9</kbd> and <kbd>0</kbd> (number row or keypad) work the buttons too, and tapping a lamp at a stop line does the same.
 
-Each set is also a **monitor**: its label shows how many cars and people are waiting there (including cars backed up off the map) and the longest wait in seconds, turning amber and then red as drivers near the end of their patience. The busiest direction gets a steady yellow outline and a **★ Busiest** tag (it only moves when another corner is clearly busier), and each button shows how many are waiting for that signal.
+Each set is also a **monitor**: its label shows how many cars and people are waiting there (including cars backed up off the map) and the longest wait in seconds, turning amber and then red as drivers near the end of their patience. The busiest direction gets a steady yellow outline and a **★ Busiest** tag (it only moves once another corner has been clearly busier for a moment), and each button shows how many are waiting for that signal.
 
 The signals don't protect you. If two conflicting groups are green, or you turn one green while the other's cars are still clearing the box, cars crash. A red **!** on a button means turning it green right now would cross moving traffic.
 
@@ -32,7 +32,7 @@ Every car gets a driver with its own habits:
 - **Green Wave:** switch a signal off after it has sent at least 4 cars through and nobody is left waiting in its lanes, and you get 5 bonus points per car.
 - Crashes cost 100 points and hitting a pedestrian costs 150.
 - Each level awards up to three stars: clear the goal, finish with no crashes, and never let city patience drop below 50%. Stars and your best score show in the level list; stars you've earned stay earned.
-- Result screens show cars per minute, average wait and longest wait. In freeplay, your best score and best cars per minute are kept for each map and density.
+- Result screens show cars per minute, average wait and longest wait. In freeplay, your best score and best cars per minute are kept for each map and density; if you change the density mid-run, the run counts for the lightest density you played at.
 
 ## Pedestrians
 
@@ -68,7 +68,7 @@ Progress and best times are saved in the browser. Number keys <kbd>1</kbd>–<kb
 
 ## Freeplay
 
-Pick **Freeplay** at the bottom of the level list to play any of the seven maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest, and Gridlock sends nearly four times as many cars), whether rush-hour surges happen, whether pedestrians cross, and whether it's night. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic while you play, and your settings are remembered.
+Pick **Freeplay** at the bottom of the level list to play any of the seven maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest, and Gridlock sends nearly four times as many cars), whether rush-hour surges happen, whether pedestrians cross, and whether it's night. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic straight away while you play, and your settings are remembered. On a phone held sideways the readout sits beside the map.
 
 ## How it works
 

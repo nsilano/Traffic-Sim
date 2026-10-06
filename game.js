@@ -83,7 +83,7 @@
   // of traffic that arrives over them.
   const LEVELS = [
     {
-      name: 'First Shift', street: 'Main St & 1st Ave', desc: '1 lane each way · 2 switches',
+      name: 'First Shift', street: 'Main St & 1st Ave', desc: '1 lane each way · 2 switches', layout: 'Two-lane crossing',
       lanes: { NS: ['TR'], EW: ['TR'] },
       groups: [
         { label: 'Main St', dirs: ['N', 'S'], move: 'T' },
@@ -94,7 +94,7 @@
       tip: 'After you switch a street off, wait for the yellow to end and for the last cars to clear the box. Cars with an amber lightning bolt speed up to beat a yellow, so watch for them before you switch.',
     },
     {
-      name: 'Turn Lanes', street: 'Main St & 1st Ave', desc: 'Left-turn lanes · 4 switches',
+      name: 'Turn Lanes', street: 'Main St & 1st Ave', desc: 'Left-turn lanes · 4 switches', layout: 'Left-turn lanes',
       lanes: { NS: ['L', 'TR'], EW: ['L', 'TR'] },
       groups: [
         { label: 'Main St', dirs: ['N', 'S'], move: 'T' },
@@ -107,7 +107,7 @@
       tip: 'A signal button with a red ! would conflict with traffic that is still moving.',
     },
     {
-      name: 'Crosswalks', street: 'Main St & 1st Ave', desc: 'Pedestrians · 6 switches',
+      name: 'Crosswalks', street: 'Main St & 1st Ave', desc: 'Pedestrians · 6 switches', layout: 'Turn lanes by the park',
       lanes: { NS: ['L', 'TR'], EW: ['L', 'TR'] },
       groups: [
         { label: 'Main St', dirs: ['N', 'S'], move: 'T' },
@@ -125,7 +125,7 @@
       tip: 'Let people cross a street while that street is red. Walk across Main St runs safely with 1st Ave straight traffic, and the flashing don’t-walk gives the last walkers time to finish.',
     },
     {
-      name: 'One Way', street: 'Main St & 2nd Ave', desc: 'One-way avenue · 5 switches',
+      name: 'One Way', street: 'Main St & 2nd Ave', desc: 'One-way avenue · 5 switches', layout: 'One-way avenue, roadworks',
       lanes: { N: ['L', 'T', 'T'], S: ['T', 'T', 'TR'], E: [], W: ['L', 'T', 'TR'] },
       groups: [
         { label: 'Main St', dirs: ['N', 'S'], move: 'T' },
@@ -142,7 +142,7 @@
       tip: 'The avenue carries the most traffic. Its left turns cut across southbound Main St, so the avenue and Main St can never run together.',
     },
     {
-      name: 'Harbor Merge', street: 'Main St & Harbor Rd', desc: 'T-junction, lane drop · 5 switches',
+      name: 'Harbor Merge', street: 'Main St & Harbor Rd', desc: 'T-junction, lane drop · 5 switches', layout: 'T-junction by the harbor',
       lanes: { N: ['T', 'TR'], S: ['L', 'T'], E: [], W: ['L', 'R'] },
       out: { N: 1, S: 2, E: 1, W: 0 },
       groups: [
@@ -160,7 +160,7 @@
       tip: 'When the merge backs up, drivers will not enter the junction until there is room on the other side. Long greens for northbound traffic stop helping once the merge is full.',
     },
     {
-      name: 'Split Phases', street: 'Main St & 3rd Ave', desc: 'Split control, lane drops · 8 switches',
+      name: 'Split Phases', street: 'Main St & 3rd Ave', desc: 'Split control, lane drops · 8 switches', layout: 'Split control, lane drops',
       lanes: { NS: ['L', 'T', 'TR'], EW: ['L', 'T', 'TR'] },
       out: { E: 2, W: 2 }, median: { EW: 28 },
       groups: [
@@ -181,7 +181,7 @@
       tip: 'Northbound straight with northbound left is safe. Northbound left with southbound straight is not.',
     },
     {
-      name: 'Downtown Rush', street: 'Main St & Broadway', desc: 'Everything at once · 10 switches',
+      name: 'Downtown Rush', street: 'Main St & Broadway', desc: 'Everything at once · 10 switches', layout: 'Downtown, merge under the overpass',
       lanes: { NS: ['L', 'T', 'T', 'TR'], EW: ['L', 'T', 'TR'] },
       out: { N: 3 }, mergeStart: 100, mergeLen: 120, decor: ['overpass', 'shadows'],
       groups: [
@@ -480,7 +480,7 @@
         ...level.groups.map((g, i) => ({ ...g, kind: 'car', state: i === 0 ? 'green' : 'red', timer: 0, cycle: 0, busy: 0, passed: 0 })),
         ...(level.walks || []).map(w => ({ ...w, kind: 'walk', state: 'red', timer: 0, cycle: 0, busy: 0 })),
       ],
-      cars: [], peds: [], wrecks: [], particles: [], flashes: [],
+      carSeq: 0, cars: [], peds: [], wrecks: [], particles: [], flashes: [],
       spawners, pedSpawners,
       rush: null, nextRush: 25,
       shake: 0, pulse: 0,
@@ -546,7 +546,7 @@
       : h < HABITS.distracted + HABITS.stall ? 'stall'
       : h < HABITS.distracted + HABITS.stall + HABITS.tailgate ? 'tailgate' : null;
     return {
-      path, s: 0, v: 0,
+      id: ++state.carSeq, path, s: 0, v: 0,
       len: truck ? 38 : 22 + Math.random() * 6,
       wid: truck ? 17 : 14,
       color: truck ? pick(TRUCK_COLORS) : pick(CAR_COLORS),
@@ -570,20 +570,23 @@
       }
       if (!sp.pending.length) { sp.blockedFor = 0; continue; }
 
-      // Pick the emptiest lane that allows the next driver's movement.
-      const move = sp.pending[0];
-      let best = null, bestRoom = 4;
-      for (const p of geo.paths) {
-        if (p.dir !== k || p.move !== move) continue;
-        const room = tails[p.laneKey] === undefined ? Infinity : tails[p.laneKey] - MIN_GAP;
-        if (room > bestRoom) { best = p; bestRoom = room; }
+      // The first waiting driver whose movement has a lane with room comes in,
+      // on the emptiest such lane. Drivers off the map are already sorted into
+      // lanes, so one waiting to turn doesn't hold up the straight lanes.
+      let best = null, bestRoom = 4, at = -1;
+      for (let i = 0; i < sp.pending.length && !best; i++) {
+        for (const p of geo.paths) {
+          if (p.dir !== k || p.move !== sp.pending[i]) continue;
+          const room = tails[p.laneKey] === undefined ? Infinity : tails[p.laneKey] - MIN_GAP;
+          if (room > bestRoom) { best = p; bestRoom = room; at = i; }
+        }
       }
       if (best) {
         const car = makeCar(best);
         car.v = Math.min(car.maxV, Math.sqrt(2 * BRAKE * Math.max(0, bestRoom)));
         state.cars.push(car);
         tails[best.laneKey] = -car.len;
-        sp.pending.shift();
+        sp.pending.splice(at, 1);
         sp.blockedFor = 0;
       } else {
         sp.blockedFor += dt;
@@ -609,7 +612,9 @@
     }
     // Crosswalks with someone on the road right now.
     const pedsOnRoad = new Set();
-    for (const ped of state.peds) if (ped.state === 'crossing' && ped.v > ped.cw.road0 - 4 && ped.v < ped.cw.road1 + 4) pedsOnRoad.add(ped.cw);
+    // (Someone who has given up waiting on a car doesn't hold up turning
+    // drivers; they walk around them instead.)
+    for (const ped of state.peds) if (ped.state === 'crossing' && ped.paused < PED_PATIENCE && ped.v > ped.cw.road0 - 4 && ped.v < ped.cw.road1 + 4) pedsOnRoad.add(ped.cw);
 
     // Lanes held up by a driver's own mistake: nobody there loses patience.
     const mistakeLanes = new Set();
@@ -728,6 +733,17 @@
         }
       }
 
+      // A driver stranded in the box (behind a wreck or a blocked exit) doesn't
+      // pull out across another car there: moving traffic goes first, then
+      // whoever got stranded first.
+      if (c.v < 3 && c.s > p.stopS && c.s < p.exitStart && vMax > 0) {
+        const cross = geo.conflicts[p.group];
+        for (const o of state.cars) {
+          if (o === c || o.s <= o.path.stopS || o.s - o.len >= o.path.exitStart || !cross.has(o.path.group)) continue;
+          if (o.v >= 3 || o.id < c.id) { vMax = 0; break; }
+        }
+      }
+
       // Pulling away from a stop takes a moment; some drivers take longer.
       if (c.v < 1) c.stoppedFor += dt;
       else if (c.v > 5) { c.stoppedFor = 0; c.starting = false; }
@@ -773,8 +789,10 @@
       if (ped.state !== 'crossing') continue;
       const at = cwPoint(ped.cw, ped.v, ped.du);
       if (dist(at, mid) > c.len / 2 + 30) continue;
+      // Someone who has stopped to let this car go (or is stepping around
+      // it) isn't in its way unless they're right in front of it.
       body ||= bodyCircles(c);
-      if (body.some(b => dist(at, b) < b.r + 8)) return true;
+      if (!(ped.paused > 0) && body.some(b => dist(at, b) < b.r + 8)) return true;
       for (let q = 0; q <= 18; q += 6) {
         if (dist(pointAt(c.path, c.s + q), at) < c.wid / 2 + 7) return true;
       }
@@ -851,6 +869,7 @@
   }
 
   function carCleared(c) {
+    if (state.failAt !== null) return; // the shift is already over
     state.cleared++;
     state.patience = Math.min(100, state.patience + REFILL_PER_CAR);
     state.waitSum += c.wait;
@@ -897,17 +916,21 @@
     bestsDirty = false;
     try { localStorage.setItem('intersection-freeplay-bests', JSON.stringify(freeplayBests)); } catch { /* storage unavailable */ }
   }
+  const runKey = () => fpKey({ map: state.freeplay.map, density: state.bestDensity ?? state.freeplay.density });
   function currentFreeplayBest() {
-    const b = state.freeplay && freeplayBests[fpKey(state.freeplay)];
+    const b = state.freeplay && freeplayBests[runKey()];
     return { score: Number.isFinite(b?.score) ? b.score : 0, cpm: Number.isFinite(b?.cpm) ? b.cpm : 0 };
   }
   function checkFreeplayBest() {
     if (!state.freeplay || state.mode !== 'running') return;
-    const key = fpKey(state.freeplay);
+    const key = runKey();
     const best = currentFreeplayBest();
+    // The best this run has to beat: whatever was on record for its key when
+    // the run started (or when the density dropped to a new key).
+    if (state.bestToBeat?.key !== key) state.bestToBeat = { key, score: best.score };
     const entry = freeplayBests[key] ||= {};
     if (state.score > best.score) {
-      if (best.score > 0 && !state.bestShown) { state.bestShown = true; banner('New best score!', '#f2a91f'); }
+      if (state.bestToBeat.score > 0 && !state.bestShown) { state.bestShown = true; banner('New best score!', '#f2a91f'); }
       entry.score = state.score; bestsDirty = true;
     }
     if (state.t >= 60) {
@@ -973,8 +996,14 @@
         // past it. This way a person and a driver never wait on each other forever.
         if (carAhead(ped) && ped.paused < PED_PATIENCE) {
           ped.paused += dt;
+        } else if (ped.paused >= PED_PATIENCE && carAhead(ped) && sidestep(ped, dt)) {
+          // Walking around the car's bumper.
+          ped.phase += dt * 10;
         } else {
-          if (!carAhead(ped)) ped.paused = 0;
+          // Once someone has run out of patience with a car they stay that
+          // way for the rest of the crossing, so a driver and a walker can't
+          // keep politely waiting on each other.
+          if (ped.paused < PED_PATIENCE && !carAhead(ped)) ped.paused = 0;
           ped.v += ped.dir * ped.speed * (g.state === 'green' ? 1 : 1.5) * dt;
           ped.phase += dt * 10;
         }
@@ -1033,9 +1062,24 @@
     return Math.abs(u - cw.uc) <= CROSSWALK / 2 + pad && v >= cw.road0 - pad && v <= cw.road1 + pad;
   }
 
+  // A pedestrian blocked by a stopped car walks around its nearer end
+  // instead of through it. False when there's no way around close by.
+  function sidestep(ped, dt) {
+    let target = null;
+    for (let k = 3; k <= 30 && target === null; k += 3) {
+      for (const du of [ped.du - k, ped.du + k]) {
+        if (!carAhead(ped, du)) { target = du; break; }
+      }
+    }
+    if (target === null) return false;
+    const step = ped.speed * dt;
+    ped.du += Math.max(-step, Math.min(step, target - ped.du));
+    return true;
+  }
+
   // A crossing pedestrian stops short of a car in their way.
-  function carAhead(ped) {
-    const next = cwPoint(ped.cw, ped.v + ped.dir * 7, ped.du);
+  function carAhead(ped, du = ped.du) {
+    const next = cwPoint(ped.cw, ped.v + ped.dir * 7, du);
     for (const c of state.cars) {
       if (dist(next, pointAt(c.path, c.s - c.len / 2)) > 30) continue;
       if (bodyCircles(c).some(b => dist(next, b) < b.r + 4)) return true;
@@ -1048,7 +1092,9 @@
       if (ped.state !== 'crossing' || ped.v < ped.cw.road0 - 2 || ped.v > ped.cw.road1 + 2) continue;
       const at = cwPoint(ped.cw, ped.v, ped.du);
       for (const c of state.cars) {
-        // Only a moving car hits someone; brushing past a stopped one doesn't count.
+        // Only a moving car hits someone; brushing past a stopped one doesn't
+        // count, and nor does pulling away from someone who stopped to let it go.
+        if (ped.paused > 0) continue;
         if (c.v < MIN_HIT_SPEED || dist(at, pointAt(c.path, c.s - c.len / 2)) > 30) continue;
         if (bodyCircles(c).some(b => dist(at, b) < b.r + 3.5)) { pedHit(ped, c, at); break; }
       }
@@ -1124,6 +1170,8 @@
   }
 
   function registerCrash(note, at, penalty) {
+    // Once the shift is already lost, more wrecks are just scenery.
+    if (state.failAt !== null) return;
     breakStreak();
     addPoints(-penalty, at ? { x: at.x, y: at.y - 18 } : null, '#ff8a8d');
     state.shake = reducedMotion ? 0 : 0.5;
@@ -1884,6 +1932,8 @@
     const at = pointAt(p, c.s - c.len / 2);
     const fwd = { x: Math.cos(at.angle), y: Math.sin(at.angle) };
     const side = { x: -fwd.y, y: fwd.x };
+    // Out of sight under the overpass deck.
+    if (underOverpass(at.x, at.y)) return;
 
     // Yellow-light racer: an amber lightning bolt riding with the car until it clears the box.
     if (c.beater && c.s < p.exitStart + c.len) {
@@ -1946,6 +1996,7 @@
     const angryAfter = state.level.angry;
     if (c.wait <= angryAfter * 0.3 || c.s > c.path.stopS + 1) return;
     const at = pointAt(c.path, c.s - c.len / 2);
+    if (underOverpass(at.x, at.y)) return;
     const frac = Math.min(1, c.wait / angryAfter);
     g.lineWidth = 2.5;
     g.strokeStyle = 'rgba(0, 0, 0, 0.45)';
@@ -2221,7 +2272,7 @@
       // Once a car has stopped in the queue it counts until it crosses the
       // line, so a green queue creeping forward doesn't flicker the count.
       if (c.v < 4) c.queued = true;
-      if (!c.queued && state.groups[p.group].state === 'green') continue;
+      if (!c.queued && c.v >= 12) continue;
       const m = by[p.dir];
       m.total++;
       m.groups[p.group] = (m.groups[p.group] || 0) + 1;
@@ -2240,8 +2291,8 @@
       m.oldest = Math.max(m.oldest, ped.wait);
     }
     // The busiest marker only moves when another corner is clearly busier
-    // for a couple of seconds, so it doesn't hop between near-ties.
-    const weight = k => (by[k].total > 0 ? by[k].total + by[k].oldest * 0.6 : 0);
+    // for a second, so it doesn't hop between near-ties.
+    const weight = k => (by[k].total > 0 ? by[k].total + by[k].oldest * 0.25 : 0);
     let leader = null, top = 0;
     for (const head of ui.heads) {
       const w = weight(head.dataset.dir);
@@ -2249,9 +2300,9 @@
     }
     const cur = ui.busiest && weight(ui.busiest) > 0 ? ui.busiest : null;
     if (!cur) { ui.busiest = leader; ui.challenger = null; }
-    else if (leader !== cur && top > weight(cur) * 1.3 + 2) {
+    else if (leader !== cur && top > weight(cur) * 1.15 + 1) {
       if (ui.challenger !== leader) { ui.challenger = leader; ui.challengerAt = state.t; }
-      else if (state.t - ui.challengerAt >= 2) { ui.busiest = leader; ui.challenger = null; }
+      else if (state.t - ui.challengerAt >= 1) { ui.busiest = leader; ui.challenger = null; }
     } else ui.challenger = null;
     const busiest = ui.heads.find(h => h.dataset.dir === ui.busiest) || null;
     const angry = state.level.angry;
@@ -2299,7 +2350,7 @@
     ui.combo.textContent = `×${state.mult}`;
     if (fp) {
       const best = currentFreeplayBest();
-      ui.fpBest.textContent = `${carsPerMinute().toFixed(1)}/min · best ${fmtNum(best.score)} pts, ${best.cpm.toFixed(1)}/min`;
+      ui.fpBest.textContent = `${state.t < 30 ? '–' : carsPerMinute().toFixed(1)}/min · best ${fmtNum(best.score)} pts, ${best.cpm.toFixed(1)}/min`;
     }
     const p = Math.ceil(state.patience);
     ui.patienceFill.style.width = state.patience + '%';
@@ -2460,6 +2511,7 @@
   function showCard(html) {
     ui.card.innerHTML = html;
     ui.overlay.hidden = false;
+    ui.overlay.scrollTop = 0;
     const primary = ui.card.querySelector('.primary');
     if (primary) primary.focus({ preventScroll: true });
   }
@@ -2551,6 +2603,7 @@
 
   function setupFreeplay(f, preview) {
     state = newState(f.map, freeplayLevel(f), f);
+    state.bestDensity = f.density;
     prefill();
     buildControls();
     resize();
@@ -2558,7 +2611,7 @@
     if (!preview) startLevel();
   }
 
-  const mapSummary = lvl => lvl.desc;
+  const mapSummary = lvl => lvl.layout; // the road itself, not the campaign shift
 
   function showFreeplaySetup() {
     const f = state.freeplay ? { ...state.freeplay } : loadFreeplaySettings();
@@ -2618,6 +2671,12 @@
     f.density = Number(ui.liveDensity.value);
     state.level.rate = densityRates(LEVELS[f.map], f.density);
     state.level.peds = state.level.basePeds * Math.min(2, densityFactor(f.density));
+    // Arrivals are memoryless, so redrawing the timers at the new rate takes
+    // effect right away instead of after a wait drawn at the old one.
+    for (const k of DIR_KEYS) if (geo.lanes[k].length) state.spawners[k].timer = expRand(1 / laneRate(k));
+    for (const sp of state.pedSpawners) sp.timer = state.level.peds ? expRand(1 / state.level.peds) : 6;
+    // A run's bests are filed under the lightest traffic it was played at.
+    state.bestDensity = Math.min(state.bestDensity, f.density);
     saveFreeplaySettings(f);
   });
 
@@ -2651,6 +2710,7 @@
 
   function winLevel() {
     state.mode = 'won';
+    suspended = null;
     const i = state.levelIndex;
     const prev = progress.best[i];
     if (prev === undefined || state.t < prev) progress.best[i] = state.t;
@@ -2682,6 +2742,7 @@
 
   function loseLevel() {
     state.mode = 'lost';
+    suspended = null;
     showCard(`
       <p class="eyebrow">${state.freeplay ? 'Freeplay' : `Level ${state.levelIndex + 1}`} · ${state.level.street}</p>
       <h2>Shift over</h2>
@@ -2696,6 +2757,7 @@
   }
 
   function togglePause() {
+    if (suspended) { resumeSuspended(); return; }
     if (state.mode === 'running') {
       state.mode = 'paused';
       showCard(`<h2>Paused</h2><p class="muted">Traffic is frozen. ${fmtNum(state.score)} points so far.</p>
@@ -2777,8 +2839,9 @@
 
   window.addEventListener('keydown', e => {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.code === 'Escape' && !ui.menu.hidden) { hideCard(); return; }
-    if (e.code === 'Escape' && suspended) { showScreen('game'); resumeSuspended(); return; }
+    // The menu has no shift to control: Esc only closes a card there.
+    if (!ui.menu.hidden) { if (e.code === 'Escape') hideCard(); return; }
+    if ((e.code === 'Escape' || e.code === 'KeyP') && suspended) { resumeSuspended(); return; }
     if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
     // Number row and numeric keypad both work.
     const m = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);

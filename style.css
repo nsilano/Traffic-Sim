@@ -481,11 +481,8 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 }
 
 /* ---- Phones ---- */
-@media (max-width: 460px) {
-  .hud { padding: 10px 12px 8px; }
-  .score-line { font-size: 1.6rem; }
-  .cleared-line { font-size: 1.3rem; }
-  .play { padding: 8px 8px 12px; gap: 8px; }
+/* Small boards (narrow phones, or any phone on its side) get compact signal sets. */
+@media (max-width: 460px), (orientation: landscape) and (max-height: 560px) {
   .map-sig { width: 28px; height: 28px; border-width: 2px; }
   .map-sig svg { width: 16px; height: 16px; }
   .map-sig.walk { border-radius: 8px; }
@@ -496,6 +493,17 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
   .cluster-name, .cluster-wait { font-size: 0.52rem; padding: 0 4px; letter-spacing: 0.04em; }
   .cluster-wait .head-count { font-size: 0.62rem; }
   .head-busiest-word { display: none; }
+}
+
+@media (max-width: 460px) {
+  .hud { padding: 10px 12px 8px; }
+  .score-line { font-size: 1.6rem; }
+  .cleared-line { font-size: 1.3rem; }
+  .play { padding: 8px 8px 12px; gap: 8px; }
+  .hud-score .mono-label { font-size: 0.6rem; letter-spacing: 0.06em; white-space: normal; line-height: 1.2; }
+  .hud-score .post-part { display: none; }
+  .hud-cleared .time-part { display: block; }
+  .hud-cleared .time-dot { display: none; }
   .menu-inner { padding: 18px 16px 14px; }
   .lamp-labels { grid-template-rows: repeat(3, 98px); }
   .housing { width: 116px; }
@@ -511,6 +519,10 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
   #score-box.pop #stat-score, .stars.animate .star[data-on="true"] { animation: none; }
 }
 
+@media (max-width: 380px) {
+  .map-list { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (max-width: 350px) {
   .map-sig { width: 24px; height: 24px; }
   .map-sig svg { width: 14px; height: 14px; }
@@ -518,4 +530,16 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
   .score-line { font-size: 1.3rem; }
   .cleared-line { font-size: 1.1rem; }
   .hud-cleared .mono-label { font-size: 0.55rem; }
+}
+
+/* ---- Phones on their side: readout on the left, map filling the height ---- */
+@media (orientation: landscape) and (max-height: 560px) {
+  .app { max-width: none; }
+  .game { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr; height: 100vh; height: 100dvh; }
+  .game > .hud { grid-column: 1; grid-row: 1; align-content: start; }
+  .game > .hazard.thin { display: none; }
+  .game > .play { grid-column: 2; grid-row: 1 / span 2; padding: 8px; }
+  .board-wrap { width: calc(100vh - 16px); width: calc(100dvh - 16px); }
+  .game > .freeplay-bar { grid-column: 1; grid-row: 2; align-self: start; margin: 10px 12px; }
+  .hud-score .post-part { display: none; }
 }
