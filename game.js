@@ -29,7 +29,7 @@
   const BEATER_SHARE = 0.1;      // drivers who speed up to beat a yellow
   const BEATER_BOOST = 1.3;      // their top speed while racing a yellow
   // Share of drivers with each bad habit. Their mistakes never count against the player.
-  const HABITS = { distracted: 0.08, stall: 0.03, tailgate: 0.03 };
+  const HABITS = { distracted: 0.08, stall: 0.03, tailgate: 0.015 };
   const MISTAKE_KINDS = new Set(['distracted', 'stall', 'bump']);
   const DRAIN_PER_ANGRY = 1.6;   // patience lost per second per honking driver
   const DRAIN_PER_BLOCKED = 4;   // per second per approach backed up off-screen
@@ -41,6 +41,8 @@
   const MERGE_START = 40;        // where a dropped lane starts to taper, past the box
   const MERGE_LEN = 110;         // length of the taper
   const WALK_CLEAR_TIME = 5;     // flashing don't-walk before a crosswalk turns red
+  const PED_PATIENCE = 1.5;      // seconds a pedestrian waits for a car in their way
+  const MIN_HIT_SPEED = 10;      // slower contact with a pedestrian isn't a hit
   const PED_COLORS = ['#e8c07a', '#c45a4a', '#5a7fb8', '#7a5aa8', '#4f9a6a', '#d0d4d8', '#2e3338', '#d98a3a'];
 
   // Travel directions. `d` is the heading; `r` points to the driver's right.
@@ -595,7 +597,9 @@
       let gap = Infinity, lead = null;
       for (const o of byLane[p.laneKey]) {
         if (o === c || o.s <= c.s) continue;
-        if (o.path !== p && o.s - o.len >= p.A + 2) continue; // went a different way
+        // A car that went a different way (a turn from a shared lane) stops
+        // mattering only once its body is clear of this car's path.
+        if (o.path !== p && o.s - o.len >= p.A + 2 && !inTheWay(c, o)) continue;
         const gl = o.s - o.len - c.s;
         if (gl < gap) { gap = gl; lead = o; }
       }
@@ -611,11 +615,16 @@
         if (eo <= ec || (o.path !== p && eo <= 0)) continue;
         gap = Math.min(gap, eo - o.len - ec);
       }
-      // Turning drivers stop for people in the crosswalk.
+      // Turning drivers stop for people in the crosswalk: short of it while
+      // anyone is crossing, and on it if someone is right in front of them.
       if (p.move !== 'T' && pedsOnRoad.size) {
         for (const x of p.crossings) {
-          if (c.s >= x.s0 || x.s0 - c.s > 90 || !pedsOnRoad.has(x.cw)) continue;
-          if ((c.v * c.v) / (2 * HARD_BRAKE) <= x.s0 - c.s - 1) gap = Math.min(gap, x.s0 - 2 - c.s + c.gapPref);
+          if (!pedsOnRoad.has(x.cw)) continue;
+          if (c.s < x.s0 - 6) {
+            if (x.s0 - c.s <= 90 && (c.v * c.v) / (2 * HARD_BRAKE) <= x.s0 - c.s - 7) gap = Math.min(gap, x.s0 - 7 - c.s + c.gapPref);
+          } else if (c.s - c.len < x.s1 && pedInFront(c, x.cw)) {
+            gap = Math.min(gap, c.gapPref);
+          }
         }
       }
       // Stop short of wrecks on the road ahead.
@@ -630,8 +639,9 @@
       let tailgating = false;
       if (c.habit === 'tailgate' && !c.bumped && lead && lead.v < 3 && lead.s <= lead.path.stopS
           && gap < 70 && c.v > 25 && c.s < p.stopS - 4) {
-        if (c.willBump === undefined) c.willBump = Math.random() < 0.5;
-        tailgating = c.willBump;
+        if (c.willBump === undefined) c.willBump = Math.random() < 0.35;
+        // Only a low-speed tap: above walking pace the driver still brakes.
+        tailgating = c.willBump && c.v < 45;
         if (tailgating && gap <= 1) { bump(c, lead); continue; }
       }
       if (!tailgating) vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * Math.max(0, gap - c.gapPref)));
@@ -711,9 +721,30 @@
     state.cars = keep;
   }
 
+  function pedInFront(c, cw) {
+    for (const ped of state.peds) {
+      if (ped.cw !== cw || ped.state !== 'crossing') continue;
+      const at = cwPoint(cw, ped.v, ped.du);
+      for (let q = 0; q <= 18; q += 6) {
+        if (dist(pointAt(c.path, c.s + q), at) < c.wid / 2 + 7) return true;
+      }
+    }
+    return false;
+  }
+
+  // Is car o's body within reach of the stretch of road just ahead of c?
+  function inTheWay(c, o) {
+    const oc = bodyCircles(o);
+    for (let q = 2; q <= 20; q += 6) {
+      const pt = pointAt(c.path, c.s + q);
+      if (oc.some(b => dist(pt, b) < b.r + c.wid / 2)) return true;
+    }
+    return false;
+  }
+
   // A low-speed tap in the queue: both drivers stop to check. Never counted as a crash.
   function bump(c, lead) {
-    c.s = lead.s - lead.len - 0.5;
+    c.s = lead.s - lead.len - 1;
     c.v = 0;
     c.bumped = true;
     for (const car of [c, lead]) { car.hold = Math.max(car.hold, 2.5); car.holdKind = 'bump'; car.starting = true; }
@@ -767,9 +798,9 @@
         const start = sp.dir > 0 ? sp.cw.road0 - 9 : sp.cw.road1 + 9;
         state.peds.push({
           cw: sp.cw, dir: sp.dir, v: start, start,
-          du: (Math.random() - 0.5) * (CROSSWALK - 8), back: waiting * 5 + Math.random() * 3,
+          du: (Math.random() - 0.5) * (CROSSWALK - 10), back: waiting * 5 + Math.random() * 3,
           speed: 26 + Math.random() * 16, color: pick(PED_COLORS),
-          state: 'waiting', wait: 0, phase: Math.random() * 6,
+          state: 'waiting', wait: 0, phase: Math.random() * 6, paused: 0,
         });
       }
     }
@@ -780,7 +811,12 @@
         else ped.wait += dt;
       } else {
         // Hurry once the hand starts flashing.
-        if (!carAhead(ped)) {
+        // Wait for a car in the way, but only briefly: after that, squeeze
+        // past it. This way a person and a driver never wait on each other forever.
+        if (carAhead(ped) && ped.paused < PED_PATIENCE) {
+          ped.paused += dt;
+        } else {
+          if (!carAhead(ped)) ped.paused = 0;
           ped.v += ped.dir * ped.speed * (g.state === 'green' ? 1 : 1.5) * dt;
           ped.phase += dt * 10;
         }
@@ -813,7 +849,7 @@
     return Math.abs(u - cw.uc) <= CROSSWALK / 2 + pad && v >= cw.road0 - pad && v <= cw.road1 + pad;
   }
 
-  // A crossing pedestrian stops short of a car sitting in their way.
+  // A crossing pedestrian stops short of a car in their way.
   function carAhead(ped) {
     const next = cwPoint(ped.cw, ped.v + ped.dir * 7, ped.du);
     for (const c of state.cars) {
@@ -828,7 +864,8 @@
       if (ped.state !== 'crossing' || ped.v < ped.cw.road0 - 2 || ped.v > ped.cw.road1 + 2) continue;
       const at = cwPoint(ped.cw, ped.v, ped.du);
       for (const c of state.cars) {
-        if (dist(at, pointAt(c.path, c.s - c.len / 2)) > 30) continue;
+        // Only a moving car hits someone; brushing past a stopped one doesn't count.
+        if (c.v < MIN_HIT_SPEED || dist(at, pointAt(c.path, c.s - c.len / 2)) > 30) continue;
         if (bodyCircles(c).some(b => dist(at, b) < b.r + 3.5)) { pedHit(ped, c, at); break; }
       }
     }
