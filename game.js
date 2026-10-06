@@ -435,7 +435,7 @@
     patienceFill: el('patience-fill'), patienceValue: el('patience-value'), patienceBar: el('patience-bar'),
     signals: el('signals'), signalButtons: [], heads: [], walkBlock: {}, monitorAt: -1, rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
     pauseBtn: el('pause-btn'), levelsBtn: el('levels-btn'),
-    score: el('stat-score'), combo: el('stat-combo'), scoreBox: el('score-box'), fpBest: el('fp-best'),
+    score: el('stat-score'), combo: el('stat-combo'), scoreBox: el('score-box'), fpBest: el('fp-best'), flowState: el('flow-state'),
     menu: el('menu'), game: el('game'), menuStars: el('menu-stars'), menuBest: el('menu-best'),
     menuShift: el('menu-shift'), menuContinue: el('menu-continue'), menuContinueSub: el('menu-continue-sub'),
     freeplayBar: el('freeplay-bar'), patienceRow: el('patience-row'), liveDensity: el('live-density'), liveDensityValue: el('live-density-value'),
@@ -467,6 +467,7 @@
 
   function newState(levelIndex, level = LEVELS[levelIndex], freeplay = null) {
     geo = buildGeometry(level);
+    const flowStyle = freeplay ? (FLOW_STYLES[freeplay.flow] ? freeplay.flow : 'lively') : levelIndex < 2 ? 'calm' : 'lively';
     const spawners = {};
     for (const k of DIR_KEYS) spawners[k] = { timer: Math.random() * 2, pending: [], blockedFor: 0 };
     // People arrive at both ends of every crosswalk.
@@ -480,6 +481,7 @@
         ...level.groups.map((g, i) => ({ ...g, kind: 'car', state: i === 0 ? 'green' : 'red', timer: 0, cycle: 0, busy: 0, passed: 0 })),
         ...(level.walks || []).map(w => ({ ...w, kind: 'walk', state: 'red', timer: 0, cycle: 0, busy: 0 })),
       ],
+      flow: newFlow(flowStyle),
       carSeq: 0, cars: [], peds: [], wrecks: [], particles: [], flashes: [],
       spawners, pedSpawners,
       rush: null, nextRush: 25,
@@ -491,8 +493,9 @@
     };
   }
 
+  // Every shift starts on empty streets; traffic builds up from there (see
+  // the flow ramp). This only resets the counters for a fresh start.
   function prefill() {
-    for (let i = 0; i < 350; i++) step(0.02, true);
     state.t = 0; state.cleared = 0; state.patience = 100;
     state.particles = []; state.flashes = []; state.popups = []; state.banners = [];
     state.score = 0; state.streak = 0; state.mult = 1; state.minPatience = 100; state.waitSum = 0; state.worstWait = 0;
@@ -519,12 +522,93 @@
   }
 
   // ---- Traffic generation ----
-  function laneRate(k) {
+  // ---- Traffic flow ----
+  // Traffic isn't a constant stream. Each shift starts on empty streets that
+  // fill up over the first minute; after that the flow swells and eases over
+  // a minute or two, each road gets bunches of cars released by the lights up
+  // the street, and now and then there's a quiet spell (or, in wilder
+  // traffic, a surge). Density sets the average; the flow style sets how far
+  // it swings around it.
+  const FLOW_RAMP = 45; // seconds from empty streets to full traffic
+  const FLOW_STYLES = {
+    calm: { label: 'Calm', desc: 'Gentle swings', tide: 0.15, bunch: 0.15, spellEvery: [70, 110], lull: 0.45, surge: 1, surgeShare: 0 },
+    lively: { label: 'Lively', desc: 'Waves and lulls', tide: 0.3, bunch: 0.35, spellEvery: [50, 85], lull: 0.4, surge: 1.45, surgeShare: 0.35 },
+    wild: { label: 'Wild', desc: 'Big surges, sudden lulls', tide: 0.45, bunch: 0.55, spellEvery: [30, 55], lull: 0.3, surge: 1.8, surgeShare: 0.55 },
+  };
+  const RUSH_BOOST = 2.4;
+
+  function newFlow(style) {
+    const st = FLOW_STYLES[style];
+    const bunch = road => ({ period: 22 + Math.random() * 14, offset: Math.random() * 40 });
+    return {
+      style, p1: Math.random() * Math.PI * 2, p2: Math.random() * Math.PI * 2,
+      bunch: { NS: bunch(), EW: bunch() },
+      spell: null, nextSpell: FLOW_RAMP + st.spellEvery[0] * (0.5 + Math.random() * 0.5),
+      // The most the flow can multiply the base rate by, for drawing arrivals.
+      cap: (1 + st.tide) * (1 + st.bunch) * Math.max(1, st.surge),
+    };
+  }
+
+  // Everything that applies to the whole junction: warm-up, tide and spells.
+  function flowGlobal() {
+    const f = state.flow, st = FLOW_STYLES[f.style], t = state.t;
+    const x = Math.min(1, t / FLOW_RAMP);
+    const ramp = 0.12 + 0.88 * x * x * (3 - 2 * x);
+    const tide = 1 + st.tide * (0.65 * Math.sin((2 * Math.PI * t) / 80 + f.p1) + 0.35 * Math.sin((2 * Math.PI * t) / 33 + f.p2));
+    let spell = 1;
+    if (f.spell) {
+      // A quiet spell is quiet even in gridlock: it drops to around the
+      // map's normal traffic, so a jammed junction gets a chance to clear.
+      const env = Math.max(0, Math.min(1, (t - f.spell.from) / 3, (f.spell.until - t) / 3));
+      spell = 1 + (f.spell.k - 1) * env;
+    }
+    return ramp * tide * spell;
+  }
+
+  // Bunches on one road: the lights up the street let cars through in waves.
+  function flowBunch(road) {
+    const b = state.flow.bunch[road];
+    const phase = ((state.t + b.offset) % b.period) / b.period;
+    return 1 + FLOW_STYLES[state.flow.style].bunch * Math.cos(2 * Math.PI * phase);
+  }
+
+  // Start and end quiet spells and surges.
+  function updateFlow() {
+    const f = state.flow, st = FLOW_STYLES[f.style], t = state.t;
+    if (f.spell && t >= f.spell.until) {
+      f.spell = null;
+      f.nextSpell = t + between(st.spellEvery);
+    } else if (!f.spell && t >= f.nextSpell) {
+      const surge = Math.random() < st.surgeShare;
+      const heavy = state.freeplay ? densityFactor(state.freeplay.density) : 1;
+      f.spell = surge
+        ? { kind: 'surge', k: st.surge, from: t, until: t + 10 + Math.random() * 8 }
+        : { kind: 'lull', k: Math.min(st.lull, 0.75 / heavy), from: t, until: t + 12 + Math.random() * 8 + 4 * (heavy - 1) };
+      if (state.mode === 'running') banner(surge ? 'Wave of traffic coming' : 'Traffic easing off', surge ? '#f2a91f' : '#7fb2e5');
+    }
+  }
+
+  // What the traffic is doing right now, for the freeplay readout.
+  function flowLabel() {
+    const f = state.flow, t = state.t;
+    if (t < FLOW_RAMP) return 'Building up';
+    if (f.spell) return f.spell.kind === 'surge' ? 'Surge' : 'Quiet spell';
+    const d = 0.65 * Math.cos((2 * Math.PI * t) / 80 + f.p1) / 80 + 0.35 * Math.cos((2 * Math.PI * t) / 33 + f.p2) / 33;
+    return d > 0.002 ? 'Picking up' : d < -0.002 ? 'Easing off' : 'Steady';
+  }
+
+  function baseLaneRate(k) {
     const [r0, r1] = state.level.rate[DIRS[k].road];
     const prog = Math.min(1, state.cleared / state.level.goal);
-    const base = r0 + (r1 - r0) * prog;
-    return state.rush && state.rush.dir === k ? base * 2.4 : base;
+    return r0 + (r1 - r0) * prog;
   }
+  function laneRate(k) {
+    const rush = state.rush && state.rush.dir === k ? RUSH_BOOST : 1;
+    return baseLaneRate(k) * rush * flowGlobal() * flowBunch(DIRS[k].road);
+  }
+  // Arrivals are drawn at the highest rate the flow can reach and kept with
+  // probability (rate now / that cap), so swings take effect straight away.
+  const laneRateCap = k => baseLaneRate(k) * RUSH_BOOST * state.flow.cap;
 
   function pickMove(k) {
     const has = m => geo.paths.some(p => p.dir === k && p.move === m);
@@ -565,9 +649,13 @@
       const sp = state.spawners[k];
       sp.timer -= dt;
       if (sp.timer <= 0) {
-        if (sp.pending.length < 20) sp.pending.push(pickMove(k));
-        sp.timer = expRand(1 / laneRate(k));
+        const cap = laneRateCap(k);
+        if (sp.pending.length < 20 && Math.random() * cap < laneRate(k)) sp.pending.push(pickMove(k));
+        sp.timer = expRand(1 / cap);
       }
+      // Drivers stuck in a long queue off the map turn off and take another
+      // way, so the backlog shrinks again when traffic eases.
+      if (sp.pending.length > 6 && Math.random() < dt * 0.04 * (sp.pending.length - 6)) sp.pending.pop();
       if (!sp.pending.length) { sp.blockedFor = 0; continue; }
 
       // The first waiting driver whose movement has a lane with room comes in,
@@ -593,6 +681,7 @@
       }
     }
 
+    updateFlow();
     if (!state.level.rush) return;
     if (state.rush && state.t >= state.rush.until) state.rush = null;
     if (!state.rush && state.t >= state.nextRush) {
@@ -901,7 +990,7 @@
   }
 
   // ---- Personal bests ----
-  const fpKey = f => `${f.map}-${f.density}`;
+  const fpKey = f => `${f.map}-${f.density}${f.flow && f.flow !== 'lively' ? '-' + f.flow : ''}`;
   function loadFreeplayBests() {
     try {
       const b = JSON.parse(localStorage.getItem('intersection-freeplay-bests'));
@@ -916,7 +1005,7 @@
     bestsDirty = false;
     try { localStorage.setItem('intersection-freeplay-bests', JSON.stringify(freeplayBests)); } catch { /* storage unavailable */ }
   }
-  const runKey = () => fpKey({ map: state.freeplay.map, density: state.bestDensity ?? state.freeplay.density });
+  const runKey = () => fpKey({ map: state.freeplay.map, density: state.bestDensity ?? state.freeplay.density, flow: state.freeplay.flow });
   function currentFreeplayBest() {
     const b = state.freeplay && freeplayBests[runKey()];
     return { score: Number.isFinite(b?.score) ? b.score : 0, cpm: Number.isFinite(b?.cpm) ? b.cpm : 0 };
@@ -960,10 +1049,12 @@
   function updatePeds(dt) {
     const rate = state.level.peds || 0;
     if (rate) {
+      const cap = rate * state.flow.cap, now = rate * flowGlobal();
       for (const sp of state.pedSpawners) {
         sp.timer -= dt;
         if (sp.timer > 0) continue;
-        sp.timer = expRand(1 / rate);
+        sp.timer = expRand(1 / cap);
+        if (Math.random() * cap >= now) continue;
         const waiting = state.peds.filter(p => p.cw === sp.cw && p.dir === sp.dir && p.state !== 'crossing').length;
         if (waiting >= 6) continue;
         const start = sp.dir > 0 ? sp.cw.road0 - 9 : sp.cw.road1 + 9;
@@ -2350,6 +2441,7 @@
     ui.combo.textContent = `×${state.mult}`;
     if (fp) {
       const best = currentFreeplayBest();
+      ui.flowState.textContent = `${FLOW_STYLES[state.flow.style].label} flow · ${flowLabel()}`;
       ui.fpBest.textContent = `${state.t < 30 ? '–' : carsPerMinute().toFixed(1)}/min · best ${fmtNum(best.score)} pts, ${best.cpm.toFixed(1)}/min`;
     }
     const p = Math.ceil(state.patience);
@@ -2481,7 +2573,8 @@
       .sort((a, b) => b[1].score - a[1].score).slice(0, 5)
       .map(([key, b]) => {
         const [map, density] = key.split('-').map(Number);
-        return `<li class="record-row"><span class="level-name">${LEVELS[map] ? LEVELS[map].name : 'Map'} · ${densityName(density)}</span><span class="level-score">${fmtNum(b.score)} · ${(b.cpm || 0).toFixed(1)}/min</span></li>`;
+        const flow = FLOW_STYLES[key.split('-')[2]] ? ` · ${FLOW_STYLES[key.split('-')[2]].label}` : '';
+        return `<li class="record-row"><span class="level-name">${LEVELS[map] ? LEVELS[map].name : 'Map'} · ${densityName(density)}${flow}</span><span class="level-score">${fmtNum(b.score)} · ${(b.cpm || 0).toFixed(1)}/min</span></li>`;
       }).join('');
     showCard(`
       <p class="eyebrow">Records</p>
@@ -2501,6 +2594,7 @@
         <li>A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Two conflicting greens cause crashes.</li>
         <li>Under each set of buttons: how many are waiting there and the longest wait so far. The busiest corner gets a yellow outline and ★, and the numbers on the buttons count who's waiting for that signal.</li>
         <li>Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow. Turning cars wait for people; straight-through traffic on green does not.</li>
+        <li>Streets start empty and fill up over the first minute. After that traffic comes in waves: it swells and eases, arrives in bunches, and now and then goes quiet or surges.</li>
         <li>Clear cars without anyone honking to build a combo up to ×3, and clear a whole queue in one green for a Green Wave bonus.</li>
         <li>Keys 1–9 and 0 (number row or keypad) work the buttons in order. <kbd>P</kbd> pauses.</li>
       </ul>
@@ -2570,10 +2664,10 @@
     try {
       const f = JSON.parse(localStorage.getItem('intersection-freeplay'));
       if (f && Number.isInteger(f.map) && LEVELS[f.map] && Number.isInteger(f.density) && f.density >= 1 && f.density <= 10) {
-        return { map: f.map, density: f.density, rush: !!f.rush, peds: f.peds !== false, night: !!f.night };
+        return { map: f.map, density: f.density, flow: FLOW_STYLES[f.flow] ? f.flow : 'lively', rush: !!f.rush, peds: f.peds !== false, night: !!f.night };
       }
     } catch { /* storage unavailable */ }
-    return { map: 2, density: 5, rush: true, peds: true, night: false };
+    return { map: 2, density: 5, flow: 'lively', rush: true, peds: true, night: false };
   }
   function saveFreeplaySettings(f) {
     try { localStorage.setItem('intersection-freeplay', JSON.stringify(f)); } catch { /* storage unavailable */ }
@@ -2633,10 +2727,15 @@
           <output id="fp-density-value" for="fp-density">${densityName(f.density)}</output>
         </div>
       </div>
+      <fieldset class="field"><legend class="label">Traffic flow</legend><div class="flow-list">${Object.entries(FLOW_STYLES).map(([key, st]) => `
+        <label class="flow-option">
+          <input type="radio" name="fp-flow" value="${key}" ${key === (f.flow || 'lively') ? 'checked' : ''}>
+          <span class="level-info"><span class="level-name">${st.label}</span><span class="level-desc">${st.desc}</span></span>
+        </label>`).join('')}</div></fieldset>
       <label class="check"><input type="checkbox" id="fp-rush" ${f.rush ? 'checked' : ''}> Rush-hour surges</label>
       <label class="check"><input type="checkbox" id="fp-peds" ${f.peds ? 'checked' : ''}> Pedestrians</label>
       <label class="check"><input type="checkbox" id="fp-night" ${f.night ? 'checked' : ''}> Night</label>
-      <p class="muted">No goal, no patience meter, and crashes never end the game.</p>
+      <p class="muted">Density sets how busy it gets on average; flow sets how much it swings. Streets start empty and fill up over the first minute. No goal, no patience meter, and crashes never end the game.</p>
       <div class="card-actions">
         <button class="primary" type="button" data-action="freeplay-start">Start freeplay</button>
         ${backButton()}
@@ -2649,6 +2748,7 @@
     return {
       map: checked ? Number(checked.value) : 0,
       density: Number(ui.card.querySelector('#fp-density').value),
+      flow: ui.card.querySelector('input[name="fp-flow"]:checked')?.value || 'lively',
       rush: ui.card.querySelector('#fp-rush').checked,
       peds: ui.card.querySelector('#fp-peds').checked,
       night: ui.card.querySelector('#fp-night').checked,
@@ -2662,7 +2762,7 @@
   });
   ui.card.addEventListener('change', e => {
     // Preview the chosen settings behind the setup card.
-    if (e.target.name === 'fp-map' || /^fp-(density|rush|peds|night)$/.test(e.target.id)) setupFreeplay(readFreeplayForm(), true);
+    if (e.target.name === 'fp-map' || e.target.name === 'fp-flow' || /^fp-(density|rush|peds|night)$/.test(e.target.id)) setupFreeplay(readFreeplayForm(), true);
   });
 
   ui.liveDensity.addEventListener('input', () => {
@@ -2671,10 +2771,10 @@
     f.density = Number(ui.liveDensity.value);
     state.level.rate = densityRates(LEVELS[f.map], f.density);
     state.level.peds = state.level.basePeds * Math.min(2, densityFactor(f.density));
-    // Arrivals are memoryless, so redrawing the timers at the new rate takes
-    // effect right away instead of after a wait drawn at the old one.
-    for (const k of DIR_KEYS) if (geo.lanes[k].length) state.spawners[k].timer = expRand(1 / laneRate(k));
-    for (const sp of state.pedSpawners) sp.timer = state.level.peds ? expRand(1 / state.level.peds) : 6;
+    // Redraw the arrival timers so the new rate takes effect right away
+    // instead of after a wait drawn at the old one.
+    for (const k of DIR_KEYS) if (geo.lanes[k].length) state.spawners[k].timer = expRand(1 / laneRateCap(k));
+    for (const sp of state.pedSpawners) sp.timer = state.level.peds ? expRand(1 / (state.level.peds * state.flow.cap)) : 6;
     // A run's bests are filed under the lightest traffic it was played at.
     state.bestDensity = Math.min(state.bestDensity, f.density);
     saveFreeplaySettings(f);

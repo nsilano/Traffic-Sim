@@ -390,6 +390,7 @@ kbd {
 input[type="range"] { width: 100%; accent-color: var(--yellow); margin: 0; }
 output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 11ch; text-align: right; color: var(--paper); }
 .fp-best { grid-column: 1 / -1; font-family: var(--font-data); font-size: 0.72rem; color: var(--dim); }
+.flow-state { grid-column: 1 / -1; font-family: var(--font-data); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--yellow); }
 
 /* ---- Cards (modal over menu or game) ---- */
 .overlay {
@@ -467,6 +468,12 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 .map-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .map-option { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 6px 8px; border: 2px solid var(--ink-3); border-radius: 8px; cursor: pointer; line-height: 1.3; background: var(--ink); }
 .map-option:has(input:checked) { border-color: var(--yellow); }
+.flow-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.flow-option { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; padding: 6px 8px; border: 2px solid var(--ink-3); border-radius: 8px; cursor: pointer; line-height: 1.25; background: var(--ink); }
+.flow-option:has(input:checked) { border-color: var(--yellow); }
+.flow-option input { accent-color: var(--yellow); margin: 2px 0 0; }
+.flow-option .level-name { font-size: 0.9rem; }
+.flow-option .level-desc { font-size: 0.75rem; }
 .map-option .level-name { font-size: 0.9rem; }
 .map-option input, .check input { accent-color: var(--yellow); margin: 0; }
 .range-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
@@ -520,7 +527,7 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 }
 
 @media (max-width: 380px) {
-  .map-list { grid-template-columns: minmax(0, 1fr); }
+  .map-list, .flow-list { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 350px) {
