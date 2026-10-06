@@ -164,13 +164,18 @@ kbd {
 .menu-lamp.red svg { stroke: var(--stop); }
 .menu-lamp.amber { background: #5a4410; }
 .menu-lamp .infinity { position: relative; font-size: 2.2rem; font-weight: 900; color: var(--yellow); }
-.menu-lamp.green { background: radial-gradient(circle at 40% 35%, #8dffb8, var(--go) 55%, #188a48); box-shadow: 0 0 36px rgba(47, 207, 114, 0.75), inset 0 -6px 0 rgba(0, 0, 0, 0.2); }
-.menu-lamp.green svg { fill: #0f3d22; stroke: none; }
+.menu-lamp.green { background: #133d24; }
+.menu-lamp.green svg { fill: var(--go); stroke: none; }
 .menu-lamp:hover { transform: scale(1.04); }
-.menu-lamp.red:hover { background: radial-gradient(circle at 40% 35%, #ff9a9d, var(--stop) 60%, #8f1f22); }
-.menu-lamp.red:hover svg { stroke: #3a0d0d; }
-.menu-lamp.amber:hover { background: radial-gradient(circle at 40% 35%, #ffe08a, var(--yellow) 60%, #9b7400); box-shadow: 0 0 30px rgba(245, 184, 0, 0.7); }
-.menu-lamp.amber:hover .infinity { color: var(--ink); }
+/* The housing cycles green, amber, red while the menu is open (data-lit);
+   hovering a lamp lights it too. */
+.housing[data-lit="red"] .menu-lamp.red, .menu-lamp.red:hover { background: radial-gradient(circle at 40% 35%, #ff9a9d, var(--stop) 60%, #8f1f22); box-shadow: 0 0 34px rgba(229, 72, 77, 0.7), inset 0 -6px 0 rgba(0, 0, 0, 0.2); }
+.housing[data-lit="red"] .menu-lamp.red svg, .menu-lamp.red:hover svg { stroke: #3a0d0d; }
+.housing[data-lit="amber"] .menu-lamp.amber, .menu-lamp.amber:hover { background: radial-gradient(circle at 40% 35%, #ffe08a, var(--yellow) 60%, #9b7400); box-shadow: 0 0 30px rgba(245, 184, 0, 0.7), inset 0 -6px 0 rgba(0, 0, 0, 0.2); }
+.housing[data-lit="amber"] .menu-lamp.amber .infinity, .menu-lamp.amber:hover .infinity { color: var(--ink); }
+.housing[data-lit="green"] .menu-lamp.green, .menu-lamp.green:hover { background: radial-gradient(circle at 40% 35%, #8dffb8, var(--go) 55%, #188a48); box-shadow: 0 0 36px rgba(47, 207, 114, 0.75), inset 0 -6px 0 rgba(0, 0, 0, 0.2); }
+.housing[data-lit="green"] .menu-lamp.green svg, .menu-lamp.green:hover svg { fill: #0f3d22; }
+.menu-lamp { transition: transform 0.12s, box-shadow 0.35s, background 0.35s; }
 .menu-lamp:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
 
 .menu-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -285,20 +290,21 @@ kbd {
 }
 .cluster-name { color: var(--yellow); }
 .cluster-wait { gap: 0; color: var(--paper); font-variant-numeric: tabular-nums; white-space: pre; }
-.cluster-wait .head-count { font-size: 0.78rem; }
+.cluster-wait .head-count { display: inline-block; min-width: 2ch; text-align: right; font-size: 0.78rem; }
+.cluster-wait .head-oldest { display: inline-block; min-width: 6ch; }
 .head[data-level="warn"] .cluster-wait { color: var(--ink); background: var(--yellow); }
 .head[data-level="bad"] .cluster-wait { color: #fff; background: var(--stop); }
 
 .head-busiest {
-  display: none;
-  background: var(--yellow);
-  color: var(--ink);
+  visibility: hidden;
+  background: var(--ink);
+  color: var(--yellow);
   border-radius: 3px;
   padding: 0 4px;
-  animation: busiest 1.2s ease-in-out infinite;
 }
-.head[data-busiest="true"] .head-busiest { display: inline-block; }
-@keyframes busiest { 50% { opacity: 0.55; } }
+/* The tag's space is always reserved so the label never changes width. */
+.head[data-busiest="true"] .head-busiest { visibility: visible; }
+.head[data-busiest="true"] .cluster-name { background: var(--yellow); color: var(--ink); }
 
 .cluster-buttons {
   display: flex;
@@ -308,7 +314,7 @@ kbd {
   background: rgba(20, 20, 20, 0.88);
   border: 2px solid transparent;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.4s, box-shadow 0.4s;
 }
 .head[data-busiest="true"] .cluster-buttons { border-color: var(--yellow); box-shadow: 0 0 16px rgba(245, 184, 0, 0.5); }
 
@@ -489,6 +495,7 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
   .cluster-buttons { gap: 2px; padding: 2px; border-radius: 8px; }
   .cluster-name, .cluster-wait { font-size: 0.52rem; padding: 0 4px; letter-spacing: 0.04em; }
   .cluster-wait .head-count { font-size: 0.62rem; }
+  .head-busiest-word { display: none; }
   .menu-inner { padding: 18px 16px 14px; }
   .lamp-labels { grid-template-rows: repeat(3, 98px); }
   .housing { width: 116px; }
@@ -501,7 +508,7 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 
 @media (prefers-reduced-motion: reduce) {
   .bar-fill, .goal-bar span, .map-sig, .menu-lamp { transition: none; }
-  #score-box.pop #stat-score, .stars.animate .star[data-on="true"], .head-busiest { animation: none; }
+  #score-box.pop #stat-score, .stars.animate .star[data-on="true"] { animation: none; }
 }
 
 @media (max-width: 350px) {

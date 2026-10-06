@@ -2194,7 +2194,7 @@
       const ex = Math.sign(-d.x + r.x), ey = Math.sign(-d.y + r.y);
       return `<div class="cluster head" data-dir="${k}" data-level="ok" data-x="${ex > 0 ? 'right' : 'left'}" data-y="${ey > 0 ? 'down' : 'up'}"
           style="left: ${(x / W) * 100}%; top: ${(y / H) * 100}%">
-        <span class="cluster-name"><span class="head-name">${DIRS[k].name} ${DIR_ARROW[k]}</span><span class="head-busiest">Busiest</span></span>
+        <span class="cluster-name"><span class="head-name">${DIRS[k].name} ${DIR_ARROW[k]}</span><span class="head-busiest" title="Busiest">★<span class="head-busiest-word"> Busiest</span></span></span>
         <div class="cluster-buttons">${carButtons.join('')}${walkButtons.join('')}</div>
         <span class="cluster-wait"><span class="head-count">0</span><span class="head-word"> waiting</span><span class="head-oldest"></span></span>
       </div>`;
@@ -2204,9 +2204,11 @@
     ui.signalButtons = [...ui.signals.querySelectorAll('.map-sig')];
     ui.heads = [...ui.signals.querySelectorAll('.head')];
     ui.monitorAt = -1;
+    ui.busiest = null;
+    ui.challenger = null;
   }
 
-  // Counts for the dock: cars queued at each approach (and off the map),
+  // Counts for the corner monitors: cars queued at each approach (and off the map),
   // people waiting at each corner, and the longest wait.
   function updateMonitor() {
     if (state.t - ui.monitorAt < 0.25 && ui.monitorAt >= 0) return;
@@ -2215,8 +2217,11 @@
     for (const k of DIR_KEYS) by[k] = { total: 0, oldest: 0, groups: {} };
     for (const c of state.cars) {
       const p = c.path;
-      const queued = c.s <= p.stopS + 1 && c.s > p.stopS - 420 && (c.v < 12 || state.groups[p.group].state !== 'green');
-      if (!queued) continue;
+      if (c.s > p.stopS + 1 || c.s <= p.stopS - 420) continue;
+      // Once a car has stopped in the queue it counts until it crosses the
+      // line, so a green queue creeping forward doesn't flicker the count.
+      if (c.v < 4) c.queued = true;
+      if (!c.queued && state.groups[p.group].state === 'green') continue;
       const m = by[p.dir];
       m.total++;
       m.groups[p.group] = (m.groups[p.group] || 0) + 1;
@@ -2234,12 +2239,21 @@
       m.groups[ped.cw.group] = (m.groups[ped.cw.group] || 0) + 1;
       m.oldest = Math.max(m.oldest, ped.wait);
     }
-    let busiest = null, top = 0;
+    // The busiest marker only moves when another corner is clearly busier
+    // for a couple of seconds, so it doesn't hop between near-ties.
+    const weight = k => (by[k].total > 0 ? by[k].total + by[k].oldest * 0.6 : 0);
+    let leader = null, top = 0;
     for (const head of ui.heads) {
-      const m = by[head.dataset.dir];
-      const weight = m.total + m.oldest * 0.6;
-      if (m.total > 0 && weight > top) { top = weight; busiest = head; }
+      const w = weight(head.dataset.dir);
+      if (w > top) { top = w; leader = head.dataset.dir; }
     }
+    const cur = ui.busiest && weight(ui.busiest) > 0 ? ui.busiest : null;
+    if (!cur) { ui.busiest = leader; ui.challenger = null; }
+    else if (leader !== cur && top > weight(cur) * 1.3 + 2) {
+      if (ui.challenger !== leader) { ui.challenger = leader; ui.challengerAt = state.t; }
+      else if (state.t - ui.challengerAt >= 2) { ui.busiest = leader; ui.challenger = null; }
+    } else ui.challenger = null;
+    const busiest = ui.heads.find(h => h.dataset.dir === ui.busiest) || null;
     const angry = state.level.angry;
     for (const head of ui.heads) {
       const m = by[head.dataset.dir];
@@ -2330,6 +2344,20 @@
     ui.game.hidden = name !== 'game';
     if (name === 'game') resize();
     else updateMenu();
+    cycleMenuLamp(name === 'menu');
+  }
+
+  // The menu's signal runs a slow green, amber, red cycle like a real one.
+  const MENU_CYCLE = [['green', 4000], ['amber', 1500], ['red', 3500]];
+  let menuLampTimer = null;
+  function cycleMenuLamp(on, i = 0) {
+    clearTimeout(menuLampTimer);
+    menuLampTimer = null;
+    const housing = el('menu-housing');
+    if (!on || matchMedia('(prefers-reduced-motion: reduce)').matches) { housing.dataset.lit = 'green'; return; }
+    const [lit, ms] = MENU_CYCLE[i];
+    housing.dataset.lit = lit;
+    menuLampTimer = setTimeout(() => cycleMenuLamp(true, (i + 1) % MENU_CYCLE.length), ms);
   }
 
   function totalStars() {
@@ -2420,7 +2448,7 @@
         <li>The buttons beside each waiting line control those cars. Each one turns a signal green; tap again to send it through yellow to red.</li>
         <li>Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal.</li>
         <li>A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Two conflicting greens cause crashes.</li>
-        <li>Under each set of buttons: how many are waiting there and the longest wait so far. The busiest corner is marked, and the numbers on the buttons count who's waiting for that signal.</li>
+        <li>Under each set of buttons: how many are waiting there and the longest wait so far. The busiest corner gets a yellow outline and ★, and the numbers on the buttons count who's waiting for that signal.</li>
         <li>Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow. Turning cars wait for people; straight-through traffic on green does not.</li>
         <li>Clear cars without anyone honking to build a combo up to ×3, and clear a whole queue in one green for a Green Wave bonus.</li>
         <li>Keys 1–9 and 0 (number row or keypad) work the buttons in order. <kbd>P</kbd> pauses.</li>

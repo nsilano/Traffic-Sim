@@ -8,7 +8,7 @@ The game opens on a main menu styled as a traffic signal: the green lamp plays y
 
 In a shift, a yellow band at the top shows the score, combo, cars cleared, crashes, time and city patience. The signal buttons sit on the map itself, in a set per direction of traffic placed on the corner right beside that queue. Each button turns its signal green, or sends a green one through yellow to red. Arrows show where those cars go; walking-figure buttons are Walk signals. Number keys <kbd>1</kbd>–<kbd>9</kbd> and <kbd>0</kbd> (number row or keypad) work the buttons too, and tapping a lamp at a stop line does the same.
 
-Each set is also a **monitor**: its label shows how many cars and people are waiting there (including cars backed up off the map) and the longest wait in seconds, turning amber and then red as drivers near the end of their patience. The busiest direction is marked **Busiest**, and each button shows how many are waiting for that signal.
+Each set is also a **monitor**: its label shows how many cars and people are waiting there (including cars backed up off the map) and the longest wait in seconds, turning amber and then red as drivers near the end of their patience. The busiest direction gets a steady yellow outline and a **★ Busiest** tag (it only moves when another corner is clearly busier), and each button shows how many are waiting for that signal.
 
 The signals don't protect you. If two conflicting groups are green, or you turn one green while the other's cars are still clearing the box, cars crash. A red **!** on a button means turning it green right now would cross moving traffic.
 
