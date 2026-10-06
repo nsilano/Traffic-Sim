@@ -789,17 +789,18 @@
     state.peds = state.peds.filter(p => !(p.state === 'crossing' && (p.dir > 0 ? p.v > p.cw.road1 + 10 : p.v < p.cw.road0 - 10)));
   }
 
-  // People look before stepping off the curb: no car on the crosswalk, and
-  // none about to reach it in the next second.
+  // People look before stepping off the curb: they wait for any car that is
+  // moving across the crosswalk or will reach it in the next second. Cars
+  // standing still (waiting at the stop line) don't stop them.
   function carsInTheWay(ped) {
     const cw = ped.cw;
     for (const c of state.cars) {
-      if (Math.abs(c.s - c.path.A) > 160) continue;
+      if (c.v < 3 || Math.abs(c.s - c.path.A) > 160) continue;
       for (const t of [0, 0.35, 0.7, 1]) {
         const ahead = c.s + c.v * t;
         for (const f of [0, 0.5, 1]) {
           const pt = pointAt(c.path, ahead - c.len * f);
-          if (onCrosswalk(cw, pt, 9)) return true;
+          if (onCrosswalk(cw, pt, 3)) return true;
         }
       }
     }
