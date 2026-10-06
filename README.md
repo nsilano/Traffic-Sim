@@ -27,6 +27,10 @@ The signals don't protect you. If two conflicting groups are green, or you turn 
 
 Progress and best times are saved in the browser.
 
+## Freeplay
+
+Pick **Freeplay** at the bottom of the level list to play any of the five maps with no goal. Choose the traffic density (1 Quiet to 10 Gridlock; 5 matches that map's level at its busiest) and whether rush-hour surges happen. By default crashes and patience never end the game; tick the option to turn those limits on. A density slider under the map changes traffic while you play, and your settings are remembered.
+
 ## How it works
 
 `game.js` builds each level's lane paths (straight lines, plus quarter-ellipse curves for turns) and works out which signal groups conflict by checking where those paths come close. Cars follow the car ahead in their approach lane and exit lane, slow for turns, and on yellow either stop or clear the intersection if they are too close to stop. They do not yield to cross traffic, so a collision check between cars in the box creates crashes, with wrecks, sparks, debris, smoke and screen shake.

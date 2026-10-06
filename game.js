@@ -259,6 +259,7 @@
     patienceFill: el('patience-fill'), patienceValue: el('patience-value'), patienceBar: el('patience-bar'),
     signals: el('signals'), signalButtons: [], rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
     pauseBtn: el('pause-btn'), levelsBtn: el('levels-btn'),
+    freeplayBar: el('freeplay-bar'), liveDensity: el('live-density'), liveDensityValue: el('live-density-value'),
   };
 
   // ---- Progress (per browser, optional) ----
@@ -278,13 +279,12 @@
   let state;
   let geo;
 
-  function newState(levelIndex) {
-    const level = LEVELS[levelIndex];
+  function newState(levelIndex, level = LEVELS[levelIndex], freeplay = null) {
     geo = buildGeometry(level);
     const spawners = {};
     for (const k of DIR_KEYS) spawners[k] = { timer: Math.random() * 2, pending: [], blockedFor: 0 };
     return {
-      levelIndex, level,
+      levelIndex, level, freeplay,
       mode: 'intro', // intro | running | paused | won | lost
       t: 0, cleared: 0, crashes: 0, patience: 100,
       groups: level.groups.map((g, i) => ({ ...g, state: i === 0 ? 'green' : 'red', timer: 0, cycle: 0, busy: 0 })),
@@ -524,7 +524,7 @@
     state.shake = reducedMotion ? 0 : 0.5;
     state.crashes++;
     state.patience = Math.max(0, state.patience - CRASH_PATIENCE);
-    if (state.crashes >= MAX_CRASHES && state.failAt === null) {
+    if (hasLimits() && state.crashes >= MAX_CRASHES && state.failAt === null) {
       state.failAt = state.t + 1.8;
       state.failReason = `${MAX_CRASHES} crashes. The city pulled you off signal duty.`;
     }
@@ -564,6 +564,7 @@
   }
 
   // ---- Patience, busy groups, win/lose ----
+  const hasLimits = () => !state.freeplay || state.freeplay.limits;
   const isAngry = c => c.wait > state.level.angry && c.s <= c.path.stopS + 1;
 
   function updateStatus(dt) {
@@ -577,6 +578,7 @@
     let blocked = 0;
     for (const k of DIR_KEYS) if (state.spawners[k].blockedFor > 1) blocked++;
     state.patience -= (angry * DRAIN_PER_ANGRY + blocked * DRAIN_PER_BLOCKED) * dt;
+    if (!hasLimits()) { state.patience = Math.max(0, state.patience); return; }
 
     if (state.failAt === null) {
       if (state.patience <= 0) {
@@ -1060,12 +1062,15 @@
 
   function updateHud() {
     const lvl = state.level;
-    ui.level.textContent = `${state.levelIndex + 1}. ${lvl.name}`;
+    const fp = state.freeplay;
+    ui.level.textContent = fp ? 'Freeplay' : `${state.levelIndex + 1}. ${lvl.name}`;
     ui.post.textContent = lvl.street;
-    ui.cleared.textContent = `${Math.min(state.cleared, lvl.goal)} / ${lvl.goal}`;
-    ui.goalFill.style.width = Math.min(100, (state.cleared / lvl.goal) * 100) + '%';
-    ui.crashes.textContent = `${state.crashes} / ${MAX_CRASHES}`;
-    ui.crashes.dataset.level = state.crashes === 0 ? 'ok' : state.crashes < MAX_CRASHES - 1 ? 'warn' : 'bad';
+    ui.cleared.textContent = fp ? String(state.cleared) : `${Math.min(state.cleared, lvl.goal)} / ${lvl.goal}`;
+    ui.goalFill.style.width = fp ? '0%' : Math.min(100, (state.cleared / lvl.goal) * 100) + '%';
+    ui.crashes.textContent = hasLimits() ? `${state.crashes} / ${MAX_CRASHES}` : String(state.crashes);
+    ui.crashes.dataset.level = state.crashes === 0 ? 'ok' : !hasLimits() || state.crashes < MAX_CRASHES - 1 ? 'warn' : 'bad';
+    ui.freeplayBar.hidden = !fp;
+    if (fp) ui.liveDensityValue.textContent = densityName(fp.density);
     ui.time.textContent = fmtTime(state.t);
     const p = Math.ceil(state.patience);
     ui.patienceFill.style.width = state.patience + '%';
@@ -1116,9 +1121,111 @@
         <span class="level-status" data-done="${best !== undefined}">${status}</span>
       </button>`;
     }).join('');
+    const free = `<button class="level-row freeplay-row" type="button" data-action="freeplay-setup">
+        <span class="level-num">∞</span>
+        <span class="level-info"><span class="level-name">Freeplay</span><span class="level-desc">Any map, your traffic density, no goal</span></span>
+        <span class="level-status">Open</span>
+      </button>`;
     const back = state.mode === 'paused' ? '<div class="card-actions"><button type="button" data-action="resume">Back to shift</button></div>' : '';
-    showCard(`<h2>Choose a shift</h2><p class="muted">Finish a level to unlock the next one.</p><div class="level-list">${rows}</div>${back}`);
+    showCard(`<h2>Choose a shift</h2><p class="muted">Finish a level to unlock the next one. Freeplay is always open.</p><div class="level-list">${rows}${free}</div>${back}`);
   }
+
+  // ---- Freeplay ----
+  const DENSITY_NAMES = ['Quiet', 'Quiet', 'Light', 'Light', 'Normal', 'Normal', 'Heavy', 'Heavy', 'Gridlock', 'Gridlock'];
+  const densityName = d => `${DENSITY_NAMES[d - 1]} (${d})`;
+
+  function loadFreeplaySettings() {
+    try {
+      const f = JSON.parse(localStorage.getItem('intersection-freeplay'));
+      if (f && LEVELS[f.map] && f.density >= 1 && f.density <= 10) {
+        return { map: f.map, density: f.density, rush: !!f.rush, limits: !!f.limits };
+      }
+    } catch { /* storage unavailable */ }
+    return { map: 1, density: 5, rush: true, limits: false };
+  }
+  function saveFreeplaySettings(f) {
+    try { localStorage.setItem('intersection-freeplay', JSON.stringify(f)); } catch { /* storage unavailable */ }
+  }
+
+  // Density 5 matches the busiest point of that map's campaign level.
+  function densityRates(base, density) {
+    const k = density / 5;
+    return { NS: [base.rate.NS[1] * k, base.rate.NS[1] * k], EW: [base.rate.EW[1] * k, base.rate.EW[1] * k] };
+  }
+
+  function freeplayLevel(f) {
+    const base = LEVELS[f.map];
+    return { ...base, name: 'Freeplay', goal: Infinity, rate: densityRates(base, f.density), rush: f.rush };
+  }
+
+  function setupFreeplay(f, preview) {
+    state = newState(f.map, freeplayLevel(f), f);
+    prefill();
+    buildControls();
+    resize();
+    ui.liveDensity.value = f.density;
+    if (!preview) startLevel();
+  }
+
+  function mapSummary(lvl) {
+    return `${lvl.lanes.NS.length} × ${lvl.lanes.EW.length} lanes · ${lvl.groups.length} switches`;
+  }
+
+  function showFreeplaySetup() {
+    const f = state.freeplay ? { ...state.freeplay } : loadFreeplaySettings();
+    if (!state.freeplay || state.freeplay.map !== f.map || state.mode === 'lost') setupFreeplay(f, true);
+    else if (state.mode === 'running') state.mode = 'paused';
+    const maps = LEVELS.map((lvl, i) => `
+      <label class="map-option">
+        <input type="radio" name="fp-map" id="fp-map-${i}" value="${i}" ${i === f.map ? 'checked' : ''}>
+        <span class="level-info"><span class="level-name">${lvl.name}</span><span class="level-desc">${mapSummary(lvl)}</span></span>
+      </label>`).join('');
+    showCard(`
+      <p class="eyebrow">Freeplay</p>
+      <h2>Set up your intersection</h2>
+      <fieldset class="field"><legend class="label">Map</legend><div class="map-list">${maps}</div></fieldset>
+      <div class="field">
+        <label class="label" for="fp-density">Traffic density</label>
+        <div class="range-row">
+          <input type="range" id="fp-density" min="1" max="10" step="1" value="${f.density}">
+          <output id="fp-density-value" for="fp-density">${densityName(f.density)}</output>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="fp-rush" ${f.rush ? 'checked' : ''}> Rush-hour surges</label>
+      <label class="check"><input type="checkbox" id="fp-limits" ${f.limits ? 'checked' : ''}> End the game after ${MAX_CRASHES} crashes or when patience runs out</label>
+      <div class="card-actions">
+        <button class="primary" type="button" data-action="freeplay-start">Start freeplay</button>
+        <button type="button" data-action="levels">All levels</button>
+      </div>`);
+  }
+
+  function readFreeplayForm() {
+    const checked = ui.card.querySelector('input[name="fp-map"]:checked');
+    return {
+      map: checked ? Number(checked.value) : 0,
+      density: Number(ui.card.querySelector('#fp-density').value),
+      rush: ui.card.querySelector('#fp-rush').checked,
+      limits: ui.card.querySelector('#fp-limits').checked,
+    };
+  }
+
+  ui.card.addEventListener('input', e => {
+    if (e.target.id === 'fp-density') {
+      ui.card.querySelector('#fp-density-value').textContent = densityName(Number(e.target.value));
+    }
+  });
+  ui.card.addEventListener('change', e => {
+    // Show the chosen map behind the setup card.
+    if (e.target.name === 'fp-map') setupFreeplay(readFreeplayForm(), true);
+  });
+
+  ui.liveDensity.addEventListener('input', () => {
+    const f = state.freeplay;
+    if (!f) return;
+    f.density = Number(ui.liveDensity.value);
+    state.level.rate = densityRates(LEVELS[f.map], f.density);
+    saveFreeplaySettings(f);
+  });
 
   function loadLevel(i) {
     state = newState(i);
@@ -1170,12 +1277,13 @@
   function loseLevel() {
     state.mode = 'lost';
     showCard(`
-      <p class="eyebrow">Level ${state.levelIndex + 1} · ${state.level.name}</p>
+      <p class="eyebrow">${state.freeplay ? 'Freeplay' : `Level ${state.levelIndex + 1}`} · ${state.level.street}</p>
       <h2>Shift over</h2>
       <p>${state.failReason}</p>
-      <p class="muted">You cleared ${state.cleared} of ${state.level.goal} cars in ${fmtTime(state.t)}.</p>
+      <p class="muted">${state.freeplay ? `You cleared ${state.cleared} cars` : `You cleared ${state.cleared} of ${state.level.goal} cars`} in ${fmtTime(state.t)}.</p>
       <div class="card-actions">
         <button class="primary" type="button" data-action="retry">Try again</button>
+        ${state.freeplay ? '<button type="button" data-action="freeplay-setup">Change settings</button>' : ''}
         <button type="button" data-action="levels">All levels</button>
       </div>`);
   }
@@ -1186,7 +1294,8 @@
       showCard(`<h2>Paused</h2><p class="muted">Traffic is frozen.</p>
         <div class="card-actions">
           <button class="primary" type="button" data-action="resume">Resume</button>
-          <button type="button" data-action="retry">Restart level</button>
+          ${state.freeplay ? '<button type="button" data-action="freeplay-setup">Change settings</button>' : ''}
+          <button type="button" data-action="retry">${state.freeplay ? 'Restart' : 'Restart level'}</button>
           <button type="button" data-action="levels">All levels</button>
         </div>`);
     } else if (state.mode === 'paused') {
@@ -1203,7 +1312,13 @@
     else if (action === 'levels') showLevelSelect();
     else if (action === 'pick') loadLevel(Number(btn.dataset.level));
     else if (action === 'next') loadLevel(state.levelIndex + 1);
-    else if (action === 'retry') loadLevel(state.levelIndex);
+    else if (action === 'retry') { if (state.freeplay) setupFreeplay(state.freeplay, false); else loadLevel(state.levelIndex); }
+    else if (action === 'freeplay-setup') showFreeplaySetup();
+    else if (action === 'freeplay-start') {
+      const f = readFreeplayForm();
+      saveFreeplaySettings(f);
+      setupFreeplay(f, false);
+    }
     else if (action === 'resume') togglePause();
   });
 
