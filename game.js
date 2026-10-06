@@ -17,6 +17,7 @@
   const YELLOW_TIME = 2.5;
   const ACCEL = 150, BRAKE = 260, HARD_BRAKE = 520, MIN_GAP = 8;
   const TURN_SPEED = { L: 62, R: 38 };
+  const MIN_COMMIT_SPEED = 45;   // slower cars always stop for a yellow
   const DRAIN_PER_ANGRY = 1.6;   // patience lost per second per honking driver
   const DRAIN_PER_BLOCKED = 4;   // per second per approach backed up off-screen
   const REFILL_PER_CAR = 1.2;
@@ -428,11 +429,22 @@
       // Obey the signal while still before the stop line.
       let mustStop = false;
       const g = state.groups[p.group];
-      if (c.s <= p.stopS && g.state !== 'green' && c.commit !== g.cycle) {
+      if (c.s <= p.stopS) {
         const d = p.stopS - c.s;
-        if (g.state === 'yellow' && (c.v * c.v) / (2 * HARD_BRAKE) > d) {
-          c.commit = g.cycle; // too close to stop: clear the intersection
-        } else {
+        let hold = false;
+        if (g.state === 'red') {
+          hold = c.commit !== g.cycle;
+        } else if (g.state === 'yellow' && c.commit !== g.cycle) {
+          // Only a car at speed that is too close to stop goes through on
+          // yellow. A slow car (one just pulling away from the line) stops,
+          // otherwise it crawls across the box long after the light is red.
+          const tooClose = (c.v * c.v) / (2 * HARD_BRAKE) > d;
+          if (tooClose && c.v >= MIN_COMMIT_SPEED) c.commit = g.cycle;
+          else hold = true;
+        }
+        // Don't enter the box when a wreck blocks the way through it.
+        if (!hold && state.wrecks.length && wreckOnPath(c)) hold = true;
+        if (hold) {
           mustStop = true;
           vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * d));
         }
@@ -456,6 +468,15 @@
       } else keep.push(c);
     }
     state.cars = keep;
+  }
+
+  function wreckOnPath(c) {
+    const p = c.path;
+    for (let s = p.stopS; s <= p.exitStart + 30; s += 8) {
+      const pt = pointAt(p, s);
+      for (const w of state.wrecks) if (dist(pt, w) < 18) return true;
+    }
+    return false;
   }
 
   function laneTails() {
