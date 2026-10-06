@@ -433,9 +433,11 @@
     post: el('post'), level: el('stat-level'), cleared: el('stat-cleared'), goalFill: el('goal-fill'),
     crashes: el('stat-crashes'), time: el('stat-time'),
     patienceFill: el('patience-fill'), patienceValue: el('patience-value'), patienceBar: el('patience-bar'),
-    signals: el('signals'), signalButtons: [], rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
+    signals: el('dock'), signalButtons: [], heads: [], walkBlock: {}, monitorAt: -1, rush: el('rush'), overlay: el('overlay'), card: el('overlay-card'),
     pauseBtn: el('pause-btn'), levelsBtn: el('levels-btn'),
     score: el('stat-score'), combo: el('stat-combo'), scoreBox: el('score-box'), fpBest: el('fp-best'),
+    menu: el('menu'), game: el('game'), menuStars: el('menu-stars'), menuBest: el('menu-best'),
+    menuShift: el('menu-shift'), menuContinue: el('menu-continue'), menuContinueSub: el('menu-continue-sub'),
     freeplayBar: el('freeplay-bar'), patienceRow: el('patience-row'), liveDensity: el('live-density'), liveDensityValue: el('live-density-value'),
   };
 
@@ -939,19 +941,29 @@
         sp.timer -= dt;
         if (sp.timer > 0) continue;
         sp.timer = expRand(1 / rate);
-        const waiting = state.peds.filter(p => p.cw === sp.cw && p.dir === sp.dir && p.state === 'waiting').length;
+        const waiting = state.peds.filter(p => p.cw === sp.cw && p.dir === sp.dir && p.state !== 'crossing').length;
         if (waiting >= 6) continue;
         const start = sp.dir > 0 ? sp.cw.road0 - 9 : sp.cw.road1 + 9;
-        state.peds.push({
+        const ped = {
           cw: sp.cw, dir: sp.dir, v: start, start,
           du: (Math.random() - 0.5) * (CROSSWALK - 10), back: waiting * 5 + Math.random() * 3,
           speed: 26 + Math.random() * 16, color: pick(PED_COLORS),
-          state: 'waiting', wait: 0, phase: Math.random() * 6, paused: 0,
-        });
+          state: 'arriving', wait: 0, phase: Math.random() * 6, paused: 0,
+        };
+        ped.route = arrivalRoute(ped);
+        ped.routeAt = 0;
+        state.peds.push(ped);
       }
     }
     for (const ped of state.peds) {
       const g = state.groups[ped.cw.group];
+      if (ped.state === 'arriving') {
+        // Walk along the sidewalk to the corner, then wait there.
+        ped.routeAt += ped.speed * 1.1 * dt;
+        ped.phase += dt * 10;
+        if (ped.routeAt >= ped.route.len) ped.state = 'waiting';
+        continue;
+      }
       if (ped.state === 'waiting') {
         if (g.state === 'green' && !carsInTheWay(ped)) ped.state = 'crossing';
         else ped.wait += dt;
@@ -969,6 +981,32 @@
       }
     }
     state.peds = state.peds.filter(p => !(p.state === 'crossing' && (p.dir > 0 ? p.v > p.cw.road1 + 10 : p.v < p.cw.road0 - 10)));
+  }
+
+  // The way a pedestrian walks in: from off the map along the sidewalk beside
+  // their road, around any lane-drop taper, to their spot at the corner.
+  function arrivalRoute(ped) {
+    const cw = ped.cw, k = cw.leg;
+    const { d, r } = DIRS[k];
+    const P = (u, v) => ({ x: CX + d.x * u + r.x * v, y: CY + d.y * u + r.y * v });
+    const { far, near, R, L0, L1, m0, m1 } = legDims(k);
+    const half = SIDEWALK / 2;
+    const wait = { u: cw.uc + ped.du * 0.7, v: ped.start - ped.dir * ped.back };
+    const pts = ped.dir > 0
+      ? [P(far - 10, -L1 - half), P(m1, -L1 - half), P(m0, -L0 - half), P(wait.u - 10, -L0 - half), P(wait.u, wait.v)]
+      : [P(far - 10, R + half), P(wait.u - 10, R + half), P(wait.u, wait.v)];
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i], pts[i - 1]));
+    return { pts, cum, len: cum[cum.length - 1] };
+  }
+
+  function routePoint(route, at) {
+    const { pts, cum } = route;
+    let i = 1;
+    while (i < pts.length - 1 && cum[i] < at) i++;
+    const a = pts[i - 1], b = pts[i];
+    const t = Math.min(1, Math.max(0, (at - cum[i - 1]) / (cum[i] - cum[i - 1] || 1)));
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, angle: Math.atan2(b.y - a.y, b.x - a.x) };
   }
 
   // People look before stepping off the curb: they wait for any car that is
@@ -1355,7 +1393,7 @@
     g.fillStyle = '#f26b1d'; g.fillRect(-11, -11, 22, 22);
     g.strokeStyle = '#141414'; g.lineWidth = 1.5; g.strokeRect(-9, -9, 18, 18);
     g.restore();
-    g.fillStyle = '#141414'; g.font = '800 6px Overpass, system-ui, sans-serif';
+    g.fillStyle = '#141414'; g.font = '800 6px Archivo, system-ui, sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('ROAD', sx, sy - 3); g.fillText('WORK', sx, sy + 4);
   }
@@ -1415,17 +1453,25 @@
   }
 
   const OVERPASS_Y = 512, OVERPASS_H = 46;
+  const underOverpass = (x, y) => hasDecor('overpass') && y > OVERPASS_Y && y < OVERPASS_Y + OVERPASS_H;
   // Cars on the overpass: purely scenery, timed from the clock.
-  function drawOverpassTraffic(g) {
+  function overpassCars() {
     const t = performance.now() / 1000;
+    const cars = [];
     for (let i = 0; i < 6; i++) {
       const east = i % 2 === 0;
       const speed = 70 + (i * 13) % 40;
       const span = W + 80;
       let x = ((t * speed + i * 137) % span) - 40;
       if (!east) x = W - x;
-      const y = OVERPASS_Y + (east ? OVERPASS_H * 0.72 : OVERPASS_H * 0.28);
-      drawCarBody(g, x, y, east ? 0 : Math.PI, { len: 24, wid: 13, color: CAR_COLORS[(i * 3) % CAR_COLORS.length], truck: false, v: 100, maxV: 100 }, false);
+      cars.push({ x, y: OVERPASS_Y + (east ? OVERPASS_H * 0.72 : OVERPASS_H * 0.28), angle: east ? 0 : Math.PI, color: CAR_COLORS[(i * 3) % CAR_COLORS.length] });
+    }
+    return cars;
+  }
+
+  function drawOverpassTraffic(g) {
+    for (const c of overpassCars()) {
+      drawCarBody(g, c.x, c.y, c.angle, { len: 24, wid: 13, color: c.color, truck: false, v: 100, maxV: 100 }, false);
     }
   }
 
@@ -1469,11 +1515,33 @@
     for (const [x, y] of [[b.x0 - 10, b.y0 - 10], [b.x1 + 10, b.y0 - 10], [b.x0 - 10, b.y1 + 10], [b.x1 + 10, b.y1 + 10]]) glow(x, y, 85, 0.85);
     for (const lamp of geo.lamps) glow(lamp.x, lamp.y, 16, 0.9);
     for (const c of state.cars) {
-      const front = pointAt(c.path, c.s);
+      // Aim the beam the way the car body faces, from its front bumper.
+      const at = pointAt(c.path, c.s - c.len / 2);
+      const fx = at.x + Math.cos(at.angle) * c.len / 2, fy = at.y + Math.sin(at.angle) * c.len / 2;
+      if (underOverpass(fx, fy)) continue;
       n.save();
-      n.translate(front.x, front.y);
-      n.rotate(front.angle);
+      n.translate(fx, fy);
+      n.rotate(at.angle);
       n.drawImage(lightSprites.cone, -8, -48);
+      n.restore();
+    }
+    if (hasDecor('overpass')) {
+      // Light from the street below doesn't reach the top of the bridge; the
+      // bridge's own traffic lights it instead.
+      n.globalCompositeOperation = 'source-over';
+      n.clearRect(0, OVERPASS_Y, W, OVERPASS_H);
+      n.fillStyle = 'rgba(5, 9, 20, 0.82)';
+      n.fillRect(0, OVERPASS_Y, W, OVERPASS_H);
+      n.globalCompositeOperation = 'destination-out';
+      n.save();
+      n.beginPath(); n.rect(0, OVERPASS_Y, W, OVERPASS_H); n.clip();
+      for (const c of overpassCars()) {
+        n.save();
+        n.translate(c.x + Math.cos(c.angle) * 12, c.y);
+        n.rotate(c.angle);
+        n.drawImage(lightSprites.cone, -8, -48);
+        n.restore();
+      }
       n.restore();
     }
     n.globalCompositeOperation = 'source-over';
@@ -1487,10 +1555,17 @@
       const at = pointAt(c.path, c.s - c.len / 2);
       const fx = Math.cos(at.angle), fy = Math.sin(at.angle), sx = -fy, sy = fx;
       for (const side of [-1, 1]) {
-        ctx.fillStyle = '#fff6d6';
-        ctx.beginPath(); ctx.arc(at.x + fx * c.len / 2 + sx * side * (c.wid / 2 - 3), at.y + fy * c.len / 2 + sy * side * (c.wid / 2 - 3), 1.8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = c.v < c.maxV * 0.5 ? '#ff3b3b' : '#a32020';
-        ctx.beginPath(); ctx.arc(at.x - fx * c.len / 2 + sx * side * (c.wid / 2 - 3), at.y - fy * c.len / 2 + sy * side * (c.wid / 2 - 3), 1.6, 0, Math.PI * 2); ctx.fill();
+        const hx = at.x + fx * c.len / 2 + sx * side * (c.wid / 2 - 3), hy = at.y + fy * c.len / 2 + sy * side * (c.wid / 2 - 3);
+        const tx = at.x - fx * c.len / 2 + sx * side * (c.wid / 2 - 3), ty = at.y - fy * c.len / 2 + sy * side * (c.wid / 2 - 3);
+        // Lights under the overpass are hidden like the rest of the car.
+        if (!underOverpass(hx, hy)) {
+          ctx.fillStyle = '#fff6d6';
+          ctx.beginPath(); ctx.arc(hx, hy, 1.8, 0, Math.PI * 2); ctx.fill();
+        }
+        if (!underOverpass(tx, ty)) {
+          ctx.fillStyle = c.v < c.maxV * 0.5 ? '#ff3b3b' : '#a32020';
+          ctx.beginPath(); ctx.arc(tx, ty, 1.6, 0, Math.PI * 2); ctx.fill();
+        }
       }
     }
   }
@@ -1658,7 +1733,7 @@
     g.beginPath(); g.moveTo(x, y - 11); g.lineTo(x + 5, y + 1); g.lineTo(x - 5, y + 1); g.closePath(); g.fill();
     g.fillStyle = '#e8edf2';
     g.beginPath(); g.moveTo(x, y + 11); g.lineTo(x + 5, y + 1); g.lineTo(x - 5, y + 1); g.closePath(); g.fill();
-    g.font = '800 11px Overpass, system-ui, sans-serif';
+    g.font = '800 11px Archivo, system-ui, sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = '#e8edf2';
     g.fillText('N', x, y - 23);
@@ -1737,14 +1812,16 @@
     const showAngry = !state.freeplay;
     for (const ped of state.peds) {
       const crossing = ped.state === 'crossing';
-      const at = crossing ? cwPoint(ped.cw, ped.v, ped.du) : cwPoint(ped.cw, ped.start - ped.dir * ped.back, ped.du * 0.7);
-      const { d, r } = DIRS[ped.cw.leg];
-      // Facing across the road.
-      const ang = Math.atan2(r.y * ped.dir, r.x * ped.dir);
+      const arriving = ped.state === 'arriving';
+      const walk = arriving ? routePoint(ped.route, ped.routeAt) : null;
+      const at = arriving ? walk : crossing ? cwPoint(ped.cw, ped.v, ped.du) : cwPoint(ped.cw, ped.start - ped.dir * ped.back, ped.du * 0.7);
+      const { r } = DIRS[ped.cw.leg];
+      // Facing the way they walk, or across the road while waiting.
+      const ang = arriving ? walk.angle : Math.atan2(r.y * ped.dir, r.x * ped.dir);
       g.save();
       g.translate(at.x, at.y);
       g.rotate(ang);
-      if (crossing) {
+      if (crossing || arriving) {
         const swing = Math.sin(ped.phase) * 2.2;
         g.strokeStyle = '#2a2622'; g.lineWidth = 2;
         g.beginPath(); g.moveTo(0, -1.8); g.lineTo(swing * 1.3, -1.8); g.moveTo(0, 1.8); g.lineTo(-swing * 1.3, 1.8); g.stroke();
@@ -1758,7 +1835,7 @@
       g.restore();
       if (showAngry && !crossing && ped.wait > state.level.angry && Math.sin(state.pulse * 10) > -0.3) {
         g.fillStyle = '#ff4d4f';
-        g.font = '800 10px Overpass, system-ui, sans-serif';
+        g.font = '800 10px Archivo, system-ui, sans-serif';
         g.textAlign = 'center'; g.textBaseline = 'middle';
         g.fillText('!', at.x, at.y - 8);
       }
@@ -1877,7 +1954,7 @@
     g.beginPath(); g.arc(at.x, at.y, 8, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); g.stroke();
     if (frac >= 1 && Math.sin(state.pulse * 10) > -0.3) {
       g.fillStyle = '#ff4d4f';
-      g.font = '700 12px Overpass, system-ui, sans-serif';
+      g.font = '700 12px Archivo, system-ui, sans-serif';
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('!', at.x, at.y + 1);
     }
@@ -1917,7 +1994,7 @@
       g.globalAlpha = Math.max(0, alpha);
       g.translate(fl.x, fl.y - 30 - fl.t * 10);
       g.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
-      g.font = `800 ${label === 'CRASH' ? 22 : label === 'BUMP' ? 10 : 15}px Overpass, system-ui, sans-serif`;
+      g.font = `800 ${label === 'CRASH' ? 22 : label === 'BUMP' ? 10 : 15}px Archivo, system-ui, sans-serif`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.lineWidth = 4;
       g.strokeStyle = '#161b21';
@@ -1940,7 +2017,7 @@
       roundRect(g, x - 15, y - 9, 30, 18, 4); g.fill();
       g.globalAlpha = 1;
       g.fillStyle = '#fff';
-      g.font = '700 11px "Overpass Mono", ui-monospace, monospace';
+      g.font = '700 11px "IBM Plex Mono", ui-monospace, monospace';
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('+' + sp.pending.length, x, y + 1);
     }
@@ -1990,7 +2067,7 @@
       const life = p.big ? 1.4 : 0.9;
       const k = p.t / life;
       g.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
-      g.font = `800 ${p.big ? 15 : 11}px Overpass, system-ui, sans-serif`;
+      g.font = `800 ${p.big ? 15 : 11}px Archivo, system-ui, sans-serif`;
       const y = p.y - 6 - k * 22;
       g.lineWidth = 3; g.strokeStyle = 'rgba(22, 27, 33, 0.9)';
       g.strokeText(p.text, p.x, y);
@@ -2006,7 +2083,7 @@
       g.globalAlpha = Math.max(0, alpha);
       g.translate(CX, 70);
       g.scale(0.7 + 0.3 * pop, 0.7 + 0.3 * pop);
-      g.font = '800 17px Overpass, system-ui, sans-serif';
+      g.font = '800 17px Archivo, system-ui, sans-serif';
       const w = g.measureText(b.text).width + 28;
       g.fillStyle = 'rgba(22, 27, 33, 0.88)';
       roundRect(g, -w / 2, -16, w, 32, 16); g.fill();
@@ -2021,7 +2098,7 @@
   // Green street-name plates at the map edges, over each street.
   function drawStreetSigns(g) {
     const names = streetNames();
-    g.font = '800 12px Overpass, system-ui, sans-serif';
+    g.font = '800 12px Archivo, system-ui, sans-serif';
     const plate = (text, x, y, anchor) => {
       const w = g.measureText(text).width + 16, h = 20;
       const x0 = anchor === 'left' ? x : anchor === 'right' ? x - w : x - w / 2, y0 = y - h / 2;
@@ -2060,26 +2137,33 @@
     return { NS: ns, EW: ew };
   }
 
+  // The signal dock: one block per direction of traffic, laid out like the
+  // map's corners (southbound top left, westbound top right, eastbound
+  // bottom left, northbound bottom right). Each block is also a monitor of
+  // how many are waiting there.
+  const DOCK_ORDER = ['S', 'W', 'E', 'N'];
+  const DIR_ARROW = { N: '↑', S: '↓', E: '→', W: '←' };
+
   function buildControls() {
     const names = streetNames();
-    const approaches = DIR_KEYS.filter(k => geo.lanes[k].length);
+    const approaches = DOCK_ORDER.filter(k => geo.lanes[k].length);
     // Walk buttons go with the approach whose corner touches that crosswalk.
     const walksAt = Object.fromEntries(approaches.map(k => [k, []]));
+    ui.walkBlock = {};
     for (const cw of geo.crosswalks) {
-      if (walksAt[cw.leg] && !walksAt[cw.leg].includes(cw.group)) walksAt[cw.leg].push(cw.group);
+      if (walksAt[cw.leg]) {
+        if (!walksAt[cw.leg].includes(cw.group)) walksAt[cw.leg].push(cw.group);
+        ui.walkBlock[cw.leg] = cw.leg;
+      }
     }
     state.groups.forEach((g, i) => {
-      if (g.kind !== 'walk' || approaches.some(k => walksAt[k].includes(i))) return;
-      if (approaches.length) walksAt[approaches[0]].push(i);
+      if (g.kind !== 'walk' || approaches.some(k => walksAt[k].includes(i)) || !approaches.length) return;
+      walksAt[approaches[0]].push(i);
+      for (const cw of geo.crosswalks) if (cw.group === i) ui.walkBlock[cw.leg] = approaches[0];
     });
+    for (const cw of geo.crosswalks) if (!ui.walkBlock[cw.leg]) ui.walkBlock[cw.leg] = approaches[0];
 
-    const clusters = approaches.map(k => {
-      const { d, r } = DIRS[k];
-      const e = geo.ext(k);
-      // Corner of the block on the driver's right, just before the intersection.
-      const u = -e.near - SIDEWALK, v = geo.legRight(k) + SIDEWALK;
-      const x = CX + d.x * u + r.x * v, y = CY + d.y * u + r.y * v;
-      const ex = Math.sign(-d.x + r.x), ey = Math.sign(-d.y + r.y);
+    const blocks = approaches.map(k => {
       const groups = [];
       for (const lamp of geo.lamps) {
         if (lamp.dir === k && !groups.includes(lamp.group)) groups.push(lamp.group);
@@ -2088,28 +2172,86 @@
       const carButtons = groups.map(i => {
         const g = state.groups[i];
         const what = g.move === 'L' ? 'left turn' : g.move === 'A' ? 'all lanes' : 'straight and right';
-        return `<button class="map-sig" type="button" data-group="${i}" data-light="${g.state}"
+        return `<button class="map-sig" type="button" data-group="${i}" data-dir="${k}" data-light="${g.state}"
             aria-label="${names[DIRS[k].road]} ${DIRS[k].name.toLowerCase()} ${what}, key ${keyLabel(i)}" title="${DIRS[k].name} ${what} (key ${keyLabel(i)})">
           <span class="arrow" style="transform: rotate(${ROTATE[k]}deg)">${GLYPH[g.move]}</span>
           <span class="key" aria-hidden="true">${keyLabel(i)}</span>
+          <span class="count" aria-hidden="true" hidden>0</span>
         </button>`;
       });
       const walkButtons = walksAt[k].map(i => {
         const g = state.groups[i];
-        return `<button class="map-sig walk" type="button" data-group="${i}" data-light="${g.state}"
+        return `<button class="map-sig walk" type="button" data-group="${i}" data-dir="${k}" data-light="${g.state}"
             aria-label="Walk across ${g.label}, key ${keyLabel(i)}" title="Walk across ${g.label} (key ${keyLabel(i)})">
           <span class="arrow">${GLYPH.walk}</span>
           <span class="key" aria-hidden="true">${keyLabel(i)}</span>
+          <span class="count" aria-hidden="true" hidden>0</span>
         </button>`;
       });
-      return `<div class="cluster" data-x="${ex > 0 ? 'right' : 'left'}" data-y="${ey > 0 ? 'down' : 'up'}"
-          style="left: ${(x / W) * 100}%; top: ${(y / H) * 100}%">
-        <span class="cluster-name">${DIRS[k].name}</span>
-        <div class="cluster-buttons">${carButtons.join('')}${walkButtons.join('')}</div>
+      return `<div class="head" data-dir="${k}" data-level="ok">
+        <div class="head-top">
+          <span class="head-name">${DIRS[k].name} <span class="head-arrow">${DIR_ARROW[k]}</span></span>
+          <span class="head-busiest">Busiest</span>
+        </div>
+        <div class="head-lamps">${carButtons.join('')}${walkButtons.join('')}</div>
+        <div class="head-wait"><span class="head-count">0 waiting</span><span class="head-oldest"></span></div>
       </div>`;
     });
-    ui.signals.innerHTML = clusters.join('');
+    ui.signals.dataset.count = approaches.length;
+    ui.signals.innerHTML = blocks.join('');
     ui.signalButtons = [...ui.signals.querySelectorAll('.map-sig')];
+    ui.heads = [...ui.signals.querySelectorAll('.head')];
+    ui.monitorAt = -1;
+  }
+
+  // Counts for the dock: cars queued at each approach (and off the map),
+  // people waiting at each corner, and the longest wait.
+  function updateMonitor() {
+    if (state.t - ui.monitorAt < 0.25 && ui.monitorAt >= 0) return;
+    ui.monitorAt = state.t;
+    const by = {};
+    for (const k of DIR_KEYS) by[k] = { total: 0, oldest: 0, groups: {} };
+    for (const c of state.cars) {
+      const p = c.path;
+      const queued = c.s <= p.stopS + 1 && c.s > p.stopS - 420 && (c.v < 12 || state.groups[p.group].state !== 'green');
+      if (!queued) continue;
+      const m = by[p.dir];
+      m.total++;
+      m.groups[p.group] = (m.groups[p.group] || 0) + 1;
+      m.oldest = Math.max(m.oldest, c.wait);
+    }
+    for (const k of DIR_KEYS) {
+      const sp = state.spawners[k];
+      if (sp.blockedFor > 1) by[k].total += sp.pending.length;
+    }
+    for (const ped of state.peds) {
+      if (ped.state !== 'waiting') continue;
+      const m = by[ui.walkBlock[ped.cw.leg] || ped.cw.leg];
+      if (!m) continue;
+      m.total++;
+      m.groups[ped.cw.group] = (m.groups[ped.cw.group] || 0) + 1;
+      m.oldest = Math.max(m.oldest, ped.wait);
+    }
+    let busiest = null, top = 0;
+    for (const head of ui.heads) {
+      const m = by[head.dataset.dir];
+      const weight = m.total + m.oldest * 0.6;
+      if (m.total > 0 && weight > top) { top = weight; busiest = head; }
+    }
+    const angry = state.level.angry;
+    for (const head of ui.heads) {
+      const m = by[head.dataset.dir];
+      head.querySelector('.head-count').textContent = m.total === 1 ? '1 waiting' : `${m.total} waiting`;
+      head.querySelector('.head-oldest').textContent = m.oldest >= 1 ? `longest ${Math.floor(m.oldest)}s` : '';
+      head.dataset.level = m.oldest > angry ? 'bad' : m.oldest > angry * 0.5 ? 'warn' : 'ok';
+      head.dataset.busiest = head === busiest && state.mode === 'running' ? 'true' : 'false';
+    }
+    for (const btn of ui.signalButtons) {
+      const n = by[btn.dataset.dir].groups[btn.dataset.group] || 0;
+      const badge = btn.querySelector('.count');
+      badge.hidden = n === 0;
+      badge.textContent = n;
+    }
   }
 
   function isUnsafe(i) {
@@ -2160,16 +2302,128 @@
       btn.disabled = !live || g.state === 'yellow';
     }
 
+    updateMonitor();
     ui.rush.hidden = !state.rush || state.mode !== 'running';
     if (state.rush) ui.rush.textContent = `Rush: ${DIRS[state.rush.dir].name.toLowerCase()} traffic`;
     ui.pauseBtn.disabled = state.mode !== 'running' && state.mode !== 'paused';
-    ui.pauseBtn.textContent = state.mode === 'paused' ? 'Resume' : 'Pause';
+    const paused = state.mode === 'paused';
+    if (ui.pauseBtn.dataset.paused !== String(paused)) {
+      ui.pauseBtn.dataset.paused = String(paused);
+      ui.pauseBtn.setAttribute('aria-label', paused ? 'Resume' : 'Pause');
+      ui.pauseBtn.innerHTML = paused
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+    }
   }
 
   function pulseScore() {
     ui.scoreBox.classList.remove('pop');
     void ui.scoreBox.offsetWidth; // restart the animation
     ui.scoreBox.classList.add('pop');
+  }
+
+  // ---- Main menu ----
+  function showScreen(name) {
+    ui.menu.hidden = name !== 'menu';
+    ui.game.hidden = name !== 'game';
+    if (name === 'game') resize();
+    else updateMenu();
+  }
+
+  function totalStars() {
+    return Object.values(progress.stars).reduce((n, st) => n + st.filter(Boolean).length, 0);
+  }
+
+  function updateMenu() {
+    const next = Math.min(progress.unlocked, LEVELS.length) - 1;
+    ui.menuStars.textContent = `★ ${totalStars()}/${LEVELS.length * 3}`;
+    const best = Math.max(0, ...Object.values(progress.scores));
+    ui.menuBest.textContent = best ? `Best shift ${fmtNum(best)}` : 'No shifts yet';
+    ui.menuShift.textContent = `Signal duty · Shift ${next + 1}`;
+    ui.menuContinue.textContent = suspended ? 'Resume' : progress.unlocked > 1 || progress.stars[0] ? 'Continue' : 'Play';
+    ui.menuContinueSub.textContent = suspended
+      ? (suspended.state.freeplay ? 'Freeplay' : LEVELS[suspended.state.levelIndex].name)
+      : LEVELS[next].name;
+  }
+
+  function menuAction(action) {
+    if (action === 'play') {
+      if (suspended) { showScreen('game'); resumeSuspended(); return; }
+      showScreen('game');
+      loadLevel(Math.min(progress.unlocked, LEVELS.length) - 1);
+    } else if (action === 'freeplay') {
+      showScreen('game');
+      showFreeplaySetup();
+    } else if (action === 'levels') showLevelSelect();
+    else if (action === 'settings') showSettings();
+    else if (action === 'records') showRecords();
+    else if (action === 'help') showHelp();
+  }
+
+  function goToMenu() {
+    suspendCurrent();
+    hideCard();
+    showScreen('menu');
+  }
+
+  function showSettings(confirming) {
+    showCard(`
+      <p class="eyebrow">Settings</p>
+      <h2>Control room</h2>
+      <p class="muted">Progress, stars and best scores are saved in this browser only.</p>
+      <div class="card-actions">
+        ${confirming
+          ? '<button class="danger" type="button" data-action="reset-confirm">Yes, erase everything</button><button type="button" data-action="settings">Keep my progress</button>'
+          : '<button type="button" data-action="reset">Reset all progress</button>'}
+        <button class="primary" type="button" data-action="close">Done</button>
+      </div>`);
+  }
+
+  function resetProgress() {
+    progress.unlocked = 1; progress.best = {}; progress.stars = {}; progress.scores = {};
+    saveProgress();
+    for (const k of Object.keys(freeplayBests)) delete freeplayBests[k];
+    bestsDirty = true; saveFreeplayBests();
+    suspended = null;
+    updateMenu();
+    showCard('<p class="eyebrow">Settings</p><h2>Progress erased</h2><p class="muted">Every level but the first is locked again.</p><div class="card-actions"><button class="primary" type="button" data-action="close">Done</button></div>');
+  }
+
+  function showRecords() {
+    const rows = LEVELS.map((lvl, i) => {
+      const st = progress.stars[i] || [false, false, false];
+      const sc = progress.scores[i];
+      return `<li class="record-row"><span class="level-num">${i + 1}</span><span class="level-name">${lvl.name}</span>${starRow(st)}<span class="level-score">${sc ? fmtNum(sc) : '—'}</span></li>`;
+    }).join('');
+    const fp = Object.entries(freeplayBests)
+      .filter(([, b]) => b && Number.isFinite(b.score) && b.score > 0)
+      .sort((a, b) => b[1].score - a[1].score).slice(0, 5)
+      .map(([key, b]) => {
+        const [map, density] = key.split('-').map(Number);
+        return `<li class="record-row"><span class="level-name">${LEVELS[map] ? LEVELS[map].name : 'Map'} · ${densityName(density)}</span><span class="level-score">${fmtNum(b.score)} · ${(b.cpm || 0).toFixed(1)}/min</span></li>`;
+      }).join('');
+    showCard(`
+      <p class="eyebrow">Records</p>
+      <h2>${totalStars()} of ${LEVELS.length * 3} stars</h2>
+      <ul class="records">${rows}</ul>
+      ${fp ? `<p class="label">Freeplay bests</p><ul class="records">${fp}</ul>` : '<p class="muted">Play freeplay to set bests for each map and density.</p>'}
+      <div class="card-actions"><button class="primary" type="button" data-action="close">Done</button></div>`);
+  }
+
+  function showHelp() {
+    showCard(`
+      <p class="eyebrow">How to play</p>
+      <h2>Run the signals</h2>
+      <ul class="help">
+        <li>The dock under the map has one block per direction of traffic, in the same corner as its queue. Each button turns a signal green; tap again to send it through yellow to red.</li>
+        <li>Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal.</li>
+        <li>A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Two conflicting greens cause crashes.</li>
+        <li>Each block counts who's waiting there and how long the longest wait is; the busiest direction is marked. Numbers on the buttons count who's waiting for that signal.</li>
+        <li>Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow. Turning cars wait for people; straight-through traffic on green does not.</li>
+        <li>Clear cars without anyone honking to build a combo up to ×3, and clear a whole queue in one green for a Green Wave bonus.</li>
+        <li>Keys 1–9 and 0 (number row or keypad) work the buttons in order. <kbd>P</kbd> pauses.</li>
+      </ul>
+      <div class="card-actions"><button class="primary" type="button" data-action="close">Got it</button></div>`);
   }
 
   // ---- Screens ----
@@ -2222,8 +2476,8 @@
         <span class="level-info"><span class="level-name">Freeplay</span><span class="level-desc">Any map, your traffic density, no goal</span></span>
         <span class="level-status">Open</span>
       </button>`;
-    const back = suspended ? `<div class="card-actions">${backButton()}</div>` : '';
-    showCard(`<h2>Choose a shift</h2><p class="muted">Finish a level to unlock the next one. Freeplay is always open.</p><div class="level-list">${rows}${free}</div>${back}`);
+    const menuBtn = ui.menu.hidden ? '<button type="button" data-action="menu">Main menu</button>' : '<button type="button" data-action="close">Close</button>';
+    showCard(`<h2>Choose a shift</h2><p class="muted">Finish a level to unlock the next one. Freeplay is always open.</p><div class="level-list">${rows}${free}</div><div class="card-actions">${backButton()}${menuBtn}</div>`);
   }
 
   // ---- Freeplay ----
@@ -2421,6 +2675,7 @@
           ${state.freeplay ? '<button type="button" data-action="freeplay-setup">Change settings</button>' : ''}
           <button type="button" data-action="retry">${state.freeplay ? 'Restart' : 'Restart level'}</button>
           <button type="button" data-action="levels">All levels</button>
+          <button type="button" data-action="menu">Main menu</button>
         </div>`);
     } else if (state.mode === 'paused') {
       state.mode = 'running';
@@ -2434,21 +2689,26 @@
     const action = btn.dataset.action;
     if (action === 'start') startLevel();
     else if (action === 'levels') showLevelSelect();
-    else if (action === 'pick') loadLevel(Number(btn.dataset.level));
+    else if (action === 'pick') { showScreen('game'); loadLevel(Number(btn.dataset.level)); }
     else if (action === 'next') loadLevel(state.levelIndex + 1);
     else if (action === 'retry') {
       // Retry skips the intro and goes straight back to work.
       if (state.freeplay) setupFreeplay(state.freeplay, false);
       else { loadLevel(state.levelIndex); startLevel(); }
     }
-    else if (action === 'freeplay-setup') showFreeplaySetup();
+    else if (action === 'freeplay-setup') { showScreen('game'); showFreeplaySetup(); }
     else if (action === 'freeplay-start') {
       const f = readFreeplayForm();
       saveFreeplaySettings(f);
       setupFreeplay(f, false);
     }
     else if (action === 'resume') togglePause();
-    else if (action === 'back') resumeSuspended();
+    else if (action === 'back') { showScreen('game'); resumeSuspended(); }
+    else if (action === 'menu') { goToMenu(); return; }
+    else if (action === 'close') { hideCard(); return; }
+    else if (action === 'settings') { showSettings(false); return; }
+    else if (action === 'reset') { showSettings(true); return; }
+    else if (action === 'reset-confirm') { resetProgress(); return; }
     if (action !== 'levels' && action !== 'freeplay-setup' && action !== 'back' && action !== 'resume') suspended = null;
   });
 
@@ -2465,6 +2725,10 @@
   ui.signals.addEventListener('focusin', setHover);
   ui.signals.addEventListener('focusout', () => { state.hover = -1; });
 
+  ui.menu.addEventListener('click', e => {
+    const btn = e.target.closest('[data-menu]');
+    if (btn) menuAction(btn.dataset.menu);
+  });
   ui.pauseBtn.addEventListener('click', togglePause);
   ui.levelsBtn.addEventListener('click', showLevelSelect);
 
@@ -2483,7 +2747,8 @@
 
   window.addEventListener('keydown', e => {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.code === 'Escape' && suspended) { resumeSuspended(); return; }
+    if (e.code === 'Escape' && !ui.menu.hidden) { hideCard(); return; }
+    if (e.code === 'Escape' && suspended) { showScreen('game'); resumeSuspended(); return; }
     if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
     // Number row and numeric keypad both work.
     const m = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
@@ -2511,7 +2776,7 @@
   prefill();
   buildControls();
   resize();
-  if (progress.unlocked > 1) showLevelSelect(); else showIntro();
+  showScreen('menu');
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize);
   requestAnimationFrame(frame);
 })();

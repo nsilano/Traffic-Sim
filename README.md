@@ -4,15 +4,17 @@ A browser game where you run the traffic signals at a city intersection. Open `i
 
 ## How to play
 
-Each direction of traffic has its signal buttons on the map, on the block right beside its waiting line. The arrow on each button points the way those cars will drive: straight (right turns go with straight), or a left turn. Tap a red button to turn it green, and tap a green one to send it through yellow to red. Green street-name signs and a compass show which street is which. Number keys <kbd>1</kbd>–<kbd>8</kbd> work too, and tapping a lamp at a stop line does the same thing.
+The game opens on a main menu styled as a traffic signal: the green lamp plays your next shift (or resumes one in progress), amber opens Freeplay, red opens Settings (reset progress). Below it are Levels, Records (stars and best scores) and How to play.
 
-On the early levels one switch controls both directions of a street, so the buttons on both sides of the intersection change together.
+In a shift, a yellow band at the top shows the score, combo, cars cleared, crashes, time and city patience. Under the map (beside it on wide screens) is the **signal dock**: one block per direction of traffic, placed in the same corner as its queue on the map (southbound top left, westbound top right, eastbound bottom left, northbound bottom right). Each button turns its signal green, or sends a green one through yellow to red. Arrows show where those cars go; walking-figure buttons are Walk signals. Number keys <kbd>1</kbd>–<kbd>9</kbd> and <kbd>0</kbd> (number row or keypad) work the buttons too, and tapping a lamp at a stop line does the same.
+
+The dock is also a **monitor**: each block shows how many cars and people are waiting there (including cars backed up off the map) and the longest wait, turning amber and then red as drivers near the end of their patience. The busiest direction is marked **Busiest**, and each button shows how many are waiting for that signal.
 
 The signals don't protect you. If two conflicting groups are green, or you turn one green while the other's cars are still clearing the box, cars crash. A red **!** on a button means turning it green right now would cross moving traffic.
 
 - Clear the level's goal number of cars to win and unlock the next level.
 - Three crashes end the shift.
-- Drivers who wait too long start honking (red `!`) and drain the city's patience. Queues backing up off the map (red `+N`) drain it faster. Empty patience ends the shift.
+- Drivers who wait too long start honking and drain the city's patience. Empty patience ends the shift.
 - <kbd>P</kbd> or <kbd>Esc</kbd> pauses.
 
 ## Drivers
@@ -34,7 +36,7 @@ Every car gets a driver with its own habits:
 
 ## Pedestrians
 
-From level 3 on, people wait at the corners. Each crosswalk has a Walk button (a walking figure on a rounded-square button) beside the nearest waiting cars. On Walk they cross; when you switch it off, the hand flashes for a few seconds so the last walkers can finish.
+From level 3 on, people walk in along the sidewalks and wait at the corners. Each crosswalk has a Walk button (a walking figure on a rounded-square button) beside the nearest waiting cars. On Walk they cross; when you switch it off, the hand flashes for a few seconds so the last walkers can finish.
 
 - Turning drivers stop for people in the crosswalk.
 - Straight-through traffic on green does not. Giving Walk across a street whose straight traffic is moving gets someone hit, which counts as a crash. The red **!** warns you before you do it.

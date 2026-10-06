@@ -6,56 +6,105 @@
 <title>Intersection Control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;700;800&family=Overpass+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=IBM+Plex+Mono:wght@500;700&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main class="app">
-  <header class="masthead">
-    <h1>Intersection <span>Control</span></h1>
-    <span class="post" id="post">Main St &amp; 1st Ave</span>
-  </header>
+  <section class="menu" id="menu" aria-label="Main menu">
+    <div class="hazard" aria-hidden="true"></div>
+    <div class="menu-inner">
+      <header class="menu-head">
+        <div class="menu-title">
+          <span class="mono-label" id="menu-shift">Signal duty · Shift 1</span>
+          <h1>Inter<br>section<br>Control</h1>
+        </div>
+        <div class="menu-chips">
+          <span class="chip" id="menu-stars">★ 0/21</span>
+          <span class="mono-label" id="menu-best">No shifts yet</span>
+        </div>
+      </header>
 
-  <section class="hud" aria-label="Shift stats">
-    <div class="readout level-readout"><span class="label">Level</span><span class="value small" id="stat-level">1. First Shift</span></div>
-    <div class="readout">
-      <span class="label">Cleared</span><span class="value" id="stat-cleared">0 / 20</span>
-      <span class="goal-bar" aria-hidden="true"><span id="goal-fill"></span></span>
-    </div>
-    <div class="readout"><span class="label">Crashes</span><span class="value" id="stat-crashes" data-level="ok">0 / 3</span></div>
-    <div class="readout score-readout" id="score-box"><span class="label">Score</span><span class="value" id="stat-score">0</span><span class="combo" id="stat-combo" hidden>×1.5</span></div>
-    <div class="readout"><span class="label">Time</span><span class="value" id="stat-time">0:00</span></div>
-    <div class="readout patience" id="patience-row">
-      <span class="label">City patience</span>
-      <div class="bar" id="patience-bar" role="progressbar" aria-label="City patience" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" data-level="ok">
-        <div class="bar-fill" id="patience-fill"></div>
+      <div class="signal-head">
+        <div class="lamp-labels" aria-hidden="true">
+          <span class="lamp-label">Settings</span>
+          <span class="lamp-label">Freeplay</span>
+          <span class="lamp-label go"><span id="menu-continue">Play</span><span class="mono-label" id="menu-continue-sub">First Shift</span></span>
+        </div>
+        <div class="housing">
+          <button class="menu-lamp red" type="button" data-menu="settings" aria-label="Settings">
+            <span class="visor" aria-hidden="true"></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+          </button>
+          <button class="menu-lamp amber" type="button" data-menu="freeplay" aria-label="Freeplay">
+            <span class="visor" aria-hidden="true"></span>
+            <span class="infinity" aria-hidden="true">∞</span>
+          </button>
+          <button class="menu-lamp green" type="button" data-menu="play" aria-label="Play the next shift">
+            <span class="visor" aria-hidden="true"></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+        <div class="lamp-spacer" aria-hidden="true"></div>
       </div>
-      <span id="patience-value">100%</span>
+
+      <nav class="menu-links" aria-label="More">
+        <button type="button" data-menu="levels">Levels</button>
+        <button type="button" data-menu="records">Records</button>
+        <button type="button" data-menu="help">How to play</button>
+      </nav>
+    </div>
+    <div class="hazard" aria-hidden="true"></div>
+  </section>
+
+  <section class="game" id="game" hidden aria-label="Intersection">
+    <header class="hud" aria-label="Shift stats">
+      <div class="hud-row">
+        <button class="round-btn" id="pause-btn" type="button" aria-label="Pause" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+        </button>
+        <div class="hud-score" id="score-box">
+          <span class="mono-label"><span id="stat-level">1. First Shift</span> · <span id="post">Main St &amp; 1st Ave</span></span>
+          <span class="score-line"><span id="stat-score">0</span><span class="combo" id="stat-combo" hidden>×1.5</span></span>
+        </div>
+        <div class="hud-cleared">
+          <span class="cleared-line" id="stat-cleared">0 / 20</span>
+          <span class="mono-label">Crashes <span id="stat-crashes" data-level="ok">0 / 3</span> · <span id="stat-time">0:00</span></span>
+        </div>
+        <button class="round-btn" id="levels-btn" type="button" aria-label="Levels">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
+        </button>
+      </div>
+      <div class="goal-bar" aria-hidden="true"><span id="goal-fill"></span></div>
+      <div class="patience" id="patience-row">
+        <span class="mono-label">Patience</span>
+        <div class="bar" id="patience-bar" role="progressbar" aria-label="City patience" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" data-level="ok">
+          <div class="bar-fill" id="patience-fill"></div>
+        </div>
+        <span class="mono-value" id="patience-value">100%</span>
+      </div>
+    </header>
+    <div class="hazard thin" aria-hidden="true"></div>
+
+    <div class="play">
+      <div class="board-wrap">
+        <canvas id="board" aria-label="Top-down view of the intersection. Tap a signal lamp on the road to switch it."></canvas>
+        <div class="rush" id="rush" hidden></div>
+      </div>
+      <section class="dock" id="dock" aria-label="Signal controls"></section>
+    </div>
+
+    <div class="freeplay-bar" id="freeplay-bar" hidden>
+      <label class="mono-label" for="live-density">Traffic density</label>
+      <input type="range" id="live-density" min="1" max="10" step="1" value="5">
+      <output id="live-density-value" for="live-density">Normal (5)</output>
+      <span class="fp-best" id="fp-best"></span>
     </div>
   </section>
 
-  <div class="board-wrap">
-    <canvas id="board" aria-label="Top-down view of the intersection. Tap a signal lamp on the road to switch it."></canvas>
-    <div class="signals" id="signals" aria-label="Signal buttons"></div>
-    <div class="rush" id="rush" hidden></div>
-    <div class="overlay" id="overlay">
-      <div class="card" id="overlay-card"></div>
-    </div>
+  <div class="overlay" id="overlay" hidden>
+    <div class="card" id="overlay-card"></div>
   </div>
-
-  <div class="freeplay-bar" id="freeplay-bar" hidden>
-    <label class="label" for="live-density">Traffic density</label>
-    <input type="range" id="live-density" min="1" max="10" step="1" value="5">
-    <output id="live-density-value" for="live-density">Normal (5)</output>
-    <span class="fp-best" id="fp-best"></span>
-  </div>
-
-  <div class="toolbar">
-    <button id="pause-btn" type="button" disabled>Pause</button>
-    <button id="levels-btn" type="button">Levels</button>
-  </div>
-
-  <p class="hint">The buttons beside each waiting line control those cars. Arrows show where the cars are headed: straight (and right turns), or left. Tap a button to turn it green, tap again to send it through yellow to red. A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow instead of stopping. Hazard lights or a … bubble mean a driver made a mistake; those delays never cost you patience. Every car you clear scores points; keep cars moving without anyone honking to build a combo up to ×3, and clear a whole queue in one green for a Green Wave bonus. On later levels, the walking-figure buttons give people a Walk signal. Turning cars wait for them, but straight-through traffic on green will not. On a keyboard, the numbers on the buttons work too. <kbd>P</kbd> pauses.</p>
 </main>
 <script src="game.js"></script>
 </body>
