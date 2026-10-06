@@ -18,6 +18,19 @@
   const ACCEL = 150, BRAKE = 260, HARD_BRAKE = 520, MIN_GAP = 8;
   const TURN_SPEED = { L: 62, R: 38 };
   const MIN_COMMIT_SPEED = 45;   // slower cars always stop for a yellow
+
+  // Driver types: top speed range, acceleration, following gap, reaction time.
+  const DRIVERS = {
+    commuter: { maxV: [92, 115], accel: 150, gap: 8, react: [0.25, 0.6] },
+    speeder: { maxV: [128, 150], accel: 215, gap: 5, react: [0.15, 0.35] },
+    cautious: { maxV: [70, 88], accel: 110, gap: 12, react: [0.5, 0.95] },
+    truck: { maxV: [72, 86], accel: 95, gap: 10, react: [0.4, 0.7] },
+  };
+  const BEATER_SHARE = 0.1;      // drivers who speed up to beat a yellow
+  const BEATER_BOOST = 1.3;      // their top speed while racing a yellow
+  // Share of drivers with each bad habit. Their mistakes never count against the player.
+  const HABITS = { distracted: 0.08, stall: 0.03, tailgate: 0.03 };
+  const MISTAKE_KINDS = new Set(['distracted', 'stall', 'bump']);
   const DRAIN_PER_ANGRY = 1.6;   // patience lost per second per honking driver
   const DRAIN_PER_BLOCKED = 4;   // per second per approach backed up off-screen
   const REFILL_PER_CAR = 1.2;
@@ -54,7 +67,7 @@
       ],
       goal: 20, rate: { NS: [0.13, 0.2], EW: [0.13, 0.2] }, left: 0, right: 0.15, angry: 9, rush: false,
       intro: 'The signal buttons sit next to the cars they control, and the arrows show which way those cars go. Turn one street red before you turn the other green. If both are green, cars will crash.',
-      tip: 'After you switch a street off, wait for the yellow to end and for the last cars to clear the box.',
+      tip: 'After you switch a street off, wait for the yellow to end and for the last cars to clear the box. Cars with an amber lightning bolt speed up to beat a yellow, so watch for them before you switch.',
     },
     {
       name: 'Turn Lanes', street: 'Main St & 1st Ave',
@@ -301,6 +314,7 @@
   function prefill() {
     for (let i = 0; i < 350; i++) step(0.02, true);
     state.t = 0; state.cleared = 0; state.patience = 100;
+    state.particles = []; state.flashes = [];
     for (const c of state.cars) c.wait = 0;
   }
 
@@ -335,15 +349,29 @@
     return Math.random() < state.level.right ? 'R' : 'T';
   }
 
+  const between = ([a, b]) => a + Math.random() * (b - a);
+
   function makeCar(path) {
     const truck = Math.random() < 0.12;
+    const r = Math.random();
+    const type = truck ? 'truck' : r < 0.2 ? 'speeder' : r < 0.35 ? 'cautious' : 'commuter';
+    const prof = DRIVERS[type];
+    // A few drivers have a bad habit that shows up now and then.
+    const h = Math.random();
+    const habit = h < HABITS.distracted ? 'distracted'
+      : h < HABITS.distracted + HABITS.stall ? 'stall'
+      : h < HABITS.distracted + HABITS.stall + HABITS.tailgate ? 'tailgate' : null;
     return {
       path, s: 0, v: 0,
       len: truck ? 38 : 22 + Math.random() * 6,
       wid: truck ? 17 : 14,
-      maxV: truck ? 78 + Math.random() * 10 : 95 + Math.random() * 30,
       color: truck ? pick(TRUCK_COLORS) : pick(CAR_COLORS),
-      truck, wait: 0, commit: -1,
+      truck, type,
+      maxV: between(prof.maxV), accel: prof.accel, gapPref: prof.gap, react: between(prof.react),
+      beater: Math.random() < BEATER_SHARE, racing: false,
+      habit, bumped: false,
+      wait: 0, commit: -1, decided: -1,
+      hold: 0, holdKind: null, stoppedFor: 0, starting: false,
     };
   }
 
@@ -394,20 +422,26 @@
       (byExit[c.path.exitKey] ||= []).push(c);
     }
 
+    // Lanes held up by a driver's own mistake: nobody there loses patience.
+    const mistakeLanes = new Set();
+    for (const c of state.cars) if (c.hold > 0 && MISTAKE_KINDS.has(c.holdKind)) mistakeLanes.add(c.path.laneKey);
+
     for (const c of state.cars) {
       const p = c.path;
-      let vMax = c.maxV;
+      if (c.racing && c.s > p.exitStart) c.racing = false;
+      let vMax = c.racing ? c.maxV * BEATER_BOOST : c.maxV;
 
       // Slow down for the turn.
       const tv = TURN_SPEED[p.move];
       if (tv && c.s < p.exitStart) vMax = Math.min(vMax, Math.sqrt(tv * tv + 2 * BRAKE * Math.max(0, p.A - c.s)));
 
       // Gap to whoever is ahead in the same approach lane or exit lane.
-      let gap = Infinity;
+      let gap = Infinity, lead = null;
       for (const o of byLane[p.laneKey]) {
         if (o === c || o.s <= c.s) continue;
         if (o.path !== p && o.s - o.len >= p.A + 2) continue; // went a different way
-        gap = Math.min(gap, o.s - o.len - c.s);
+        const gl = o.s - o.len - c.s;
+        if (gl < gap) { gap = gl; lead = o; }
       }
       const ec = c.s - p.exitStart;
       for (const o of byExit[p.exitKey]) {
@@ -424,7 +458,15 @@
           }
         }
       }
-      vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * Math.max(0, gap - MIN_GAP)));
+      // Mistake: a tailgater comes up on a stopped queue too fast and taps it.
+      let tailgating = false;
+      if (c.habit === 'tailgate' && !c.bumped && lead && lead.v < 3 && lead.s <= lead.path.stopS
+          && gap < 70 && c.v > 25 && c.s < p.stopS - 4) {
+        if (c.willBump === undefined) c.willBump = Math.random() < 0.5;
+        tailgating = c.willBump;
+        if (tailgating && gap <= 1) { bump(c, lead); continue; }
+      }
+      if (!tailgating) vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * Math.max(0, gap - c.gapPref)));
 
       // Obey the signal while still before the stop line.
       let mustStop = false;
@@ -434,13 +476,23 @@
         let hold = false;
         if (g.state === 'red') {
           hold = c.commit !== g.cycle;
+          if (!hold && c.racing && (c.v * c.v) / (2 * HARD_BRAKE) <= d) { hold = true; c.racing = false; }
         } else if (g.state === 'yellow' && c.commit !== g.cycle) {
           // Only a car at speed that is too close to stop goes through on
           // yellow. A slow car (one just pulling away from the line) stops,
           // otherwise it crawls across the box long after the light is red.
           const tooClose = (c.v * c.v) / (2 * HARD_BRAKE) > d;
           if (tooClose && c.v >= MIN_COMMIT_SPEED) c.commit = g.cycle;
-          else hold = true;
+          else if (c.decided !== g.cycle) {
+            // Yellow-light racers floor it if they can reach the line before red.
+            c.decided = g.cycle;
+            const left = YELLOW_TIME - g.timer;
+            const reach = ((c.v + c.maxV * BEATER_BOOST) / 2) * left * 0.8;
+            if (c.beater && c.v > 30 && d < reach && !(state.wrecks.length && wreckOnPath(c))) {
+              c.commit = g.cycle;
+              c.racing = true;
+            } else hold = true;
+          } else hold = true;
         }
         // Don't enter the box when a wreck blocks the way through it.
         if (!hold && state.wrecks.length && wreckOnPath(c)) hold = true;
@@ -450,13 +502,32 @@
         }
       }
 
-      if (c.v < vMax) c.v = Math.min(vMax, c.v + ACCEL * dt);
+      // Pulling away from a stop takes a moment; some drivers take longer.
+      if (c.v < 1) c.stoppedFor += dt;
+      else if (c.v > 5) { c.stoppedFor = 0; c.starting = false; }
+      if (c.v < 1 && c.stoppedFor > 0.3 && vMax > 5 && c.hold <= 0 && !c.starting) {
+        c.starting = true;
+        c.hold = c.react; c.holdKind = 'react';
+        if (c.habit === 'distracted' && Math.random() < 0.6) {
+          c.hold += 1.2 + Math.random() * 1.5; c.holdKind = 'distracted';
+        } else if (c.habit === 'stall' && Math.random() < 0.5) {
+          c.hold += 2 + Math.random() * 1.5; c.holdKind = 'stall';
+        }
+      }
+      if (c.hold > 0) {
+        c.hold -= dt;
+        vMax = 0;
+        if (c.hold <= 0) c.holdKind = null;
+      }
+
+      const accel = c.racing ? c.accel * 1.6 : c.accel;
+      if (c.v < vMax) c.v = Math.min(vMax, c.v + accel * dt);
       else c.v = Math.max(vMax, c.v - HARD_BRAKE * 1.5 * dt);
       const before = c.s;
       c.s += c.v * dt;
       if (mustStop && before <= p.stopS && c.s > p.stopS) { c.s = p.stopS; c.v = 0; }
 
-      if (c.v < 4 && c.s <= p.stopS + 1) c.wait += dt;
+      if (c.v < 4 && c.s <= p.stopS + 1 && !mistakeLanes.has(p.laneKey)) c.wait += dt;
     }
 
     // Cars that left the map count as cleared.
@@ -468,6 +539,20 @@
       } else keep.push(c);
     }
     state.cars = keep;
+  }
+
+  // A low-speed tap in the queue: both drivers stop to check. Never counted as a crash.
+  function bump(c, lead) {
+    c.s = lead.s - lead.len - 0.5;
+    c.v = 0;
+    c.bumped = true;
+    for (const car of [c, lead]) { car.hold = Math.max(car.hold, 2.5); car.holdKind = 'bump'; car.starting = true; }
+    const at = pointAt(c.path, c.s);
+    for (let i = 0; i < 8; i++) {
+      const ang = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 70;
+      state.particles.push({ kind: 'spark', x: at.x, y: at.y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 0.2 + Math.random() * 0.25 });
+    }
+    state.flashes.push({ x: at.x, y: at.y, t: 0, kind: 'bump' });
   }
 
   function wreckOnPath(c) {
@@ -593,7 +678,7 @@
     let angry = 0;
     for (const c of state.cars) {
       const p = c.path;
-      if (c.s > p.stopS + 0.5 && c.s - c.len < p.exitStart) state.groups[p.group].busy++;
+      if ((c.s > p.stopS + 0.5 || c.racing) && c.s - c.len < p.exitStart) state.groups[p.group].busy++;
       if (isAngry(c)) angry++;
     }
     let blocked = 0;
@@ -893,6 +978,69 @@
     g.restore();
   }
 
+  // Badges that tell the player what a driver is up to.
+  function drawDriverMarks(g, c) {
+    const p = c.path;
+    const at = pointAt(p, c.s - c.len / 2);
+    const fwd = { x: Math.cos(at.angle), y: Math.sin(at.angle) };
+    const side = { x: -fwd.y, y: fwd.x };
+
+    // Yellow-light racer: an amber lightning bolt riding with the car until it clears the box.
+    if (c.beater && c.s < p.exitStart + c.len) {
+      if (c.racing) {
+        // Speed streaks behind the car.
+        g.strokeStyle = 'rgba(242, 169, 31, 0.8)';
+        g.lineWidth = 1.6;
+        for (const o of [-5, 0, 5]) {
+          const bx = at.x - fwd.x * (c.len / 2 + 3) + side.x * o, by = at.y - fwd.y * (c.len / 2 + 3) + side.y * o;
+          const ln = 8 + Math.random() * 8;
+          g.beginPath(); g.moveTo(bx, by); g.lineTo(bx - fwd.x * ln, by - fwd.y * ln); g.stroke();
+        }
+      }
+      const pulse = c.racing ? 1 : 0.7 + 0.3 * Math.sin(state.pulse * 6);
+      // Amber outline around the car body.
+      g.save();
+      g.translate(at.x, at.y); g.rotate(at.angle);
+      g.strokeStyle = `rgba(242, 169, 31, ${pulse})`;
+      g.lineWidth = 2;
+      roundRect(g, -c.len / 2 - 3, -c.wid / 2 - 3, c.len + 6, c.wid + 6, 6); g.stroke();
+      g.restore();
+      // Lightning badge on the driver's side.
+      const bx = at.x + side.x * -(c.wid / 2 + 10), by = at.y + side.y * -(c.wid / 2 + 10);
+      g.fillStyle = '#161b21';
+      g.beginPath(); g.arc(bx, by, 8.5, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = `rgba(242, 169, 31, ${pulse})`;
+      g.lineWidth = 1.5;
+      g.stroke();
+      g.fillStyle = `rgba(242, 169, 31, ${pulse})`;
+      g.beginPath();
+      g.moveTo(bx + 1.4, by - 6); g.lineTo(bx - 3.6, by + 0.7); g.lineTo(bx - 0.3, by + 0.7);
+      g.lineTo(bx - 1.4, by + 6); g.lineTo(bx + 3.6, by - 0.7); g.lineTo(bx + 0.3, by - 0.7);
+      g.closePath(); g.fill();
+    }
+
+    if (c.hold <= 0) return;
+    if (c.holdKind === 'distracted') {
+      // A thought bubble: eyes off the road.
+      const x = at.x + side.x * -(c.wid / 2 + 12), y = at.y + side.y * -(c.wid / 2 + 12) - 4;
+      g.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      roundRect(g, x - 11, y - 6, 24, 15, 7); g.fill();
+      g.fillStyle = '#e8edf2';
+      roundRect(g, x - 12, y - 8, 24, 15, 7); g.fill();
+      g.beginPath(); g.arc(x - 6, y + 9, 2.2, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#161b21';
+      for (const dx of [-5, 0, 5]) { g.beginPath(); g.arc(x + dx, y - 0.5, 1.7, 0, Math.PI * 2); g.fill(); }
+    } else if ((c.holdKind === 'stall' || c.holdKind === 'bump') && Math.sin(state.pulse * 12) > 0) {
+      // Hazard lights at all four corners.
+      g.fillStyle = '#ffb02e';
+      for (const f of [-1, 1]) for (const sd of [-1, 1]) {
+        const x = at.x + fwd.x * f * (c.len / 2 - 1) + side.x * sd * (c.wid / 2 - 1);
+        const y = at.y + fwd.y * f * (c.len / 2 - 1) + side.y * sd * (c.wid / 2 - 1);
+        g.beginPath(); g.arc(x, y, 3.2, 0, Math.PI * 2); g.fill();
+      }
+    }
+  }
+
   function drawWaitRing(g, c) {
     if (state.freeplay) return; // no patience in freeplay
     const angryAfter = state.level.angry;
@@ -933,7 +1081,8 @@
       }
     }
     for (const fl of state.flashes) {
-      if (fl.t < 0.3) {
+      const isBump = fl.kind === 'bump';
+      if (!isBump && fl.t < 0.3) {
         const k = fl.t / 0.3;
         g.fillStyle = `rgba(255, 244, 214, ${0.85 * (1 - k)})`;
         g.beginPath(); g.arc(fl.x, fl.y, 10 + k * 40, 0, Math.PI * 2); g.fill();
@@ -944,13 +1093,13 @@
       g.globalAlpha = Math.max(0, alpha);
       g.translate(fl.x, fl.y - 30 - fl.t * 10);
       g.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
-      g.font = '800 22px Overpass, system-ui, sans-serif';
+      g.font = isBump ? '800 13px Overpass, system-ui, sans-serif' : '800 22px Overpass, system-ui, sans-serif';
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.lineWidth = 4;
       g.strokeStyle = '#161b21';
-      g.strokeText('CRASH', 0, 0);
-      g.fillStyle = '#e5484d';
-      g.fillText('CRASH', 0, 0);
+      g.strokeText(isBump ? 'BUMP' : 'CRASH', 0, 0);
+      g.fillStyle = isBump ? '#f2a91f' : '#e5484d';
+      g.fillText(isBump ? 'BUMP' : 'CRASH', 0, 0);
       g.restore();
     }
   }
@@ -996,6 +1145,7 @@
       ctx.globalAlpha = 1;
     }
     drawEffects(ctx);
+    for (const c of state.cars) drawDriverMarks(ctx, c);
     for (const c of state.cars) drawWaitRing(ctx, c);
     drawBacklog(ctx);
     drawStreetSigns(ctx);

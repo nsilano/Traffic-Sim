@@ -15,6 +15,15 @@ The signals don't protect you. If two conflicting groups are green, or you turn 
 - Drivers who wait too long start honking (red `!`) and drain the city's patience. Queues backing up off the map (red `+N`) drain it faster. Empty patience ends the shift.
 - <kbd>P</kbd> or <kbd>Esc</kbd> pauses.
 
+## Drivers
+
+Every car gets a driver with its own habits:
+
+- **Commuters** (most drivers) cruise at a normal speed. **Speeders** are faster, quicker off the line and follow closer. **Cautious** drivers are slower, react later and leave bigger gaps. **Trucks** are slow to accelerate.
+- Everyone takes a moment to react when the light turns green or the car ahead pulls away.
+- **Yellow-light racers** (10% of drivers) wear an amber lightning bolt and outline from the moment they appear. When their light turns yellow, they speed up to beat it instead of stopping. They count as traffic in the box, so the red **!** still covers them. If one misjudges and can still stop when the light turns red, it gives up and stops.
+- **Mistakes:** some drivers are distracted at green (a … bubble), some stall (hazard lights), and some tailgaters tap the car ahead in the queue ("BUMP", hazard lights on both). These delays never cost patience and never count as crashes.
+
 ## Levels
 
 | # | Name | Lanes per direction (Main St / cross street) | Switches |

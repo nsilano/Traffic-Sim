@@ -436,6 +436,20 @@ output {
 .map-sig[data-unsafe="true"] .key { background: var(--stop); color: #fff; font-size: 0; }
 .map-sig[data-unsafe="true"] .key::after { content: "!"; font-size: 0.7rem; }
 
+.bolt-dot {
+  display: inline-block;
+  min-width: 1.2em;
+  border-radius: 0.6em;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--amber);
+  font-size: 0.8em;
+  text-align: center;
+  line-height: 1.3em;
+}
+
+.bolt-dot svg { width: 0.7em; height: 0.85em; fill: currentColor; vertical-align: -0.05em; }
+
 .warn-dot {
   display: inline-block;
   min-width: 1.2em;
