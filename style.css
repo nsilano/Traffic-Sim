@@ -175,9 +175,8 @@ h1 span { color: var(--amber); }
 
 .rush {
   position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 8px;
+  right: 8px;
   background: var(--amber);
   color: var(--bg);
   font-family: var(--font-data);
@@ -528,3 +527,21 @@ kbd {
 
 /* Walk buttons: rounded squares, so they read differently from car signals. */
 .map-sig.walk { border-radius: 11px; }
+
+/* Narrow phones: smaller map buttons so three-button clusters fit their block,
+   and the live density slider gets its own row. */
+@media (max-width: 420px) {
+  .map-sig { width: 28px; height: 28px; border-width: 1.5px; }
+  .map-sig svg { width: 16px; height: 16px; }
+  .map-sig.walk { border-radius: 8px; }
+  .cluster-buttons { gap: 2px; padding: 2px; border-radius: 8px; }
+  .rush { font-size: 0.6rem; padding: 3px 6px; }
+  .freeplay-bar { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .freeplay-bar .label { grid-column: 1 / -1; }
+}
+
+@media (max-width: 350px) {
+  .map-sig { width: 24px; height: 24px; }
+  .map-sig svg { width: 14px; height: 14px; }
+  .cluster-name { display: none; }
+}

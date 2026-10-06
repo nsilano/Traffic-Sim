@@ -424,7 +424,11 @@
   function loadProgress() {
     try {
       const p = JSON.parse(localStorage.getItem('intersection-progress'));
-      if (p && typeof p.unlocked === 'number') return { unlocked: p.unlocked, best: p.best || {} };
+      if (p && Number.isInteger(p.unlocked)) {
+        const best = {};
+        for (const [k, v] of Object.entries(p.best || {})) if (Number.isFinite(v) && v >= 0) best[k] = v;
+        return { unlocked: Math.min(LEVELS.length, Math.max(1, p.unlocked)), best };
+      }
     } catch { /* storage unavailable */ }
     return { unlocked: 1, best: {} };
   }
@@ -604,29 +608,35 @@
         if (gl < gap) { gap = gl; lead = o; }
       }
       const ec = c.s - p.exitStart;
+      const cWaitingToMerge = p.merges && c.s < p.mergeS;
       for (const o of byExit[p.exitKey]) {
         if (o === c) continue;
         const eo = o.s - o.path.exitStart;
-        // Merging: a car whose lane ends lets the car already in the lane go first.
-        if (p.merges && o.path !== p && !o.path.merges && c.s < p.mergeS && eo + 6 > ec) {
-          if (eo - o.len < p.mergeS - p.exitStart + 6) gap = Math.min(gap, p.mergeS - c.s);
-          continue;
+        const oWaitingToMerge = o.path.merges && o.s < o.path.mergeS;
+        if (o.path !== p) {
+          // Merging: the car whose lane ends goes only when the lane beside
+          // it is clear; until then, cars in that lane ignore it.
+          if (cWaitingToMerge && !oWaitingToMerge) {
+            const alongside = eo > ec - c.len - 12;
+            if (alongside && eo - o.len < p.mergeS - p.exitStart + 6) gap = Math.min(gap, p.mergeS - c.s);
+            continue;
+          }
+          if (oWaitingToMerge && !cWaitingToMerge) continue;
         }
         if (eo <= ec || (o.path !== p && eo <= 0)) continue;
         gap = Math.min(gap, eo - o.len - ec);
       }
-      // Turning drivers stop for people in the crosswalk: short of it while
-      // anyone is crossing, and on it if someone is right in front of them.
+      // Turning drivers stop short of a crosswalk while anyone is crossing it.
       if (p.move !== 'T' && pedsOnRoad.size) {
         for (const x of p.crossings) {
-          if (!pedsOnRoad.has(x.cw)) continue;
-          if (c.s < x.s0 - 6) {
-            if (x.s0 - c.s <= 90 && (c.v * c.v) / (2 * HARD_BRAKE) <= x.s0 - c.s - 7) gap = Math.min(gap, x.s0 - 7 - c.s + c.gapPref);
-          } else if (c.s - c.len < x.s1 && pedInFront(c, x.cw)) {
-            gap = Math.min(gap, c.gapPref);
-          }
+          if (!pedsOnRoad.has(x.cw) || c.s >= x.s0 - 6 || x.s0 - c.s > 90) continue;
+          if ((c.v * c.v) / (2 * HARD_BRAKE) <= x.s0 - c.s - 7) gap = Math.min(gap, x.s0 - 7 - c.s + c.gapPref);
         }
       }
+      // Nobody drives into a person right beside or ahead of them: turning
+      // drivers always check, and so does anyone creeping along in a queue.
+      // Straight-through traffic at speed does not, which is the player's risk.
+      if (pedsOnRoad.size && (p.move !== 'T' || c.v < 25) && pedNear(c)) gap = Math.min(gap, c.gapPref);
       // Stop short of wrecks on the road ahead.
       if (state.wrecks.length && c.s < p.len) {
         for (const w of state.wrecks) {
@@ -721,10 +731,15 @@
     state.cars = keep;
   }
 
-  function pedInFront(c, cw) {
+  function pedNear(c) {
+    const mid = pointAt(c.path, c.s - c.len / 2);
+    let body = null;
     for (const ped of state.peds) {
-      if (ped.cw !== cw || ped.state !== 'crossing') continue;
-      const at = cwPoint(cw, ped.v, ped.du);
+      if (ped.state !== 'crossing') continue;
+      const at = cwPoint(ped.cw, ped.v, ped.du);
+      if (dist(at, mid) > c.len / 2 + 30) continue;
+      body ||= bodyCircles(c);
+      if (body.some(b => dist(at, b) < b.r + 8)) return true;
       for (let q = 0; q <= 18; q += 6) {
         if (dist(pointAt(c.path, c.s + q), at) < c.wid / 2 + 7) return true;
       }
@@ -744,13 +759,13 @@
 
   // A low-speed tap in the queue: both drivers stop to check. Never counted as a crash.
   function bump(c, lead) {
-    c.s = lead.s - lead.len - 1;
+    c.s = lead.s - lead.len - 3;
     c.v = 0;
     c.bumped = true;
     for (const car of [c, lead]) { car.hold = Math.max(car.hold, 2.5); car.holdKind = 'bump'; car.starting = true; }
     const at = pointAt(c.path, c.s);
-    for (let i = 0; i < 8; i++) {
-      const ang = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 70;
+    for (let i = 0; i < 3; i++) {
+      const ang = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 40;
       state.particles.push({ kind: 'spark', x: at.x, y: at.y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 0.2 + Math.random() * 0.25 });
     }
     state.flashes.push({ x: at.x, y: at.y, t: 0, kind: 'bump' });
@@ -1517,7 +1532,7 @@
       g.globalAlpha = Math.max(0, alpha);
       g.translate(fl.x, fl.y - 30 - fl.t * 10);
       g.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
-      g.font = `800 ${label === 'CRASH' ? 22 : label === 'BUMP' ? 13 : 15}px Overpass, system-ui, sans-serif`;
+      g.font = `800 ${label === 'CRASH' ? 22 : label === 'BUMP' ? 10 : 15}px Overpass, system-ui, sans-serif`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.lineWidth = 4;
       g.strokeStyle = '#161b21';
@@ -1691,7 +1706,7 @@
     ui.goalFill.style.width = fp ? '0%' : Math.min(100, (state.cleared / lvl.goal) * 100) + '%';
     ui.crashes.textContent = hasLimits() ? `${state.crashes} / ${MAX_CRASHES}` : String(state.crashes);
     ui.crashes.dataset.level = state.crashes === 0 ? 'ok' : !hasLimits() || state.crashes < MAX_CRASHES - 1 ? 'warn' : 'bad';
-    ui.freeplayBar.hidden = !fp;
+    ui.freeplayBar.hidden = !fp || !ui.overlay.hidden;
     ui.patienceRow.hidden = !!fp;
     if (fp) ui.liveDensityValue.textContent = densityName(fp.density);
     ui.time.textContent = fmtTime(state.t);
@@ -1729,8 +1744,27 @@
 
   const levelSummary = lvl => lvl.desc;
 
+  // A shift in progress is kept while the player browses the level list or
+  // freeplay settings, so "Back to shift" can return to it.
+  let suspended = null;
+  function suspendCurrent() {
+    if (suspended || (state.mode !== 'running' && state.mode !== 'paused')) return;
+    state.mode = 'paused';
+    suspended = { state, geo };
+  }
+  function resumeSuspended() {
+    ({ state, geo } = suspended);
+    suspended = null;
+    buildControls();
+    resize();
+    if (state.freeplay) ui.liveDensity.value = state.freeplay.density;
+    state.mode = 'running';
+    hideCard();
+  }
+  const backButton = () => (suspended ? '<button type="button" data-action="back">Back to shift</button>' : '');
+
   function showLevelSelect() {
-    if (state.mode === 'running') state.mode = 'paused';
+    suspendCurrent();
     const rows = LEVELS.map((lvl, i) => {
       const locked = i + 1 > progress.unlocked;
       const best = progress.best[i];
@@ -1746,7 +1780,7 @@
         <span class="level-info"><span class="level-name">Freeplay</span><span class="level-desc">Any map, your traffic density, no goal</span></span>
         <span class="level-status">Open</span>
       </button>`;
-    const back = state.mode === 'paused' ? '<div class="card-actions"><button type="button" data-action="resume">Back to shift</button></div>' : '';
+    const back = suspended ? `<div class="card-actions">${backButton()}</div>` : '';
     showCard(`<h2>Choose a shift</h2><p class="muted">Finish a level to unlock the next one. Freeplay is always open.</p><div class="level-list">${rows}${free}</div>${back}`);
   }
 
@@ -1757,7 +1791,7 @@
   function loadFreeplaySettings() {
     try {
       const f = JSON.parse(localStorage.getItem('intersection-freeplay'));
-      if (f && LEVELS[f.map] && f.density >= 1 && f.density <= 10) {
+      if (f && Number.isInteger(f.map) && LEVELS[f.map] && Number.isInteger(f.density) && f.density >= 1 && f.density <= 10) {
         return { map: f.map, density: f.density, rush: !!f.rush, peds: f.peds !== false };
       }
     } catch { /* storage unavailable */ }
@@ -1802,8 +1836,8 @@
 
   function showFreeplaySetup() {
     const f = state.freeplay ? { ...state.freeplay } : loadFreeplaySettings();
-    if (!state.freeplay || state.freeplay.map !== f.map || state.mode === 'lost') setupFreeplay(f, true);
-    else if (state.mode === 'running') state.mode = 'paused';
+    suspendCurrent();
+    setupFreeplay(f, true);
     const maps = LEVELS.map((lvl, i) => `
       <label class="map-option">
         <input type="radio" name="fp-map" id="fp-map-${i}" value="${i}" ${i === f.map ? 'checked' : ''}>
@@ -1825,6 +1859,7 @@
       <p class="muted">No goal, no patience meter, and crashes never end the game.</p>
       <div class="card-actions">
         <button class="primary" type="button" data-action="freeplay-start">Start freeplay</button>
+        ${backButton()}
         <button type="button" data-action="levels">All levels</button>
       </div>`);
   }
@@ -1845,8 +1880,8 @@
     }
   });
   ui.card.addEventListener('change', e => {
-    // Show the chosen map behind the setup card.
-    if (e.target.name === 'fp-map') setupFreeplay(readFreeplayForm(), true);
+    // Preview the chosen settings behind the setup card.
+    if (e.target.name === 'fp-map' || /^fp-(density|rush|peds)$/.test(e.target.id)) setupFreeplay(readFreeplayForm(), true);
   });
 
   ui.liveDensity.addEventListener('input', () => {
@@ -1951,6 +1986,8 @@
       setupFreeplay(f, false);
     }
     else if (action === 'resume') togglePause();
+    else if (action === 'back') resumeSuspended();
+    if (action !== 'levels' && action !== 'freeplay-setup' && action !== 'back' && action !== 'resume') suspended = null;
   });
 
   ui.signals.addEventListener('click', e => {
@@ -1974,7 +2011,7 @@
     const rect = canvas.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * W;
     const y = ((e.clientY - rect.top) / rect.height) * H;
-    let best = null, bestD = 16;
+    let best = null, bestD = 22;
     for (const lamp of geo.lamps) {
       const d = Math.hypot(lamp.x - x, lamp.y - y);
       if (d < bestD) { best = lamp; bestD = d; }
@@ -1983,6 +2020,8 @@
   });
 
   window.addEventListener('keydown', e => {
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'Escape' && suspended) { resumeSuspended(); return; }
     if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
     const m = /^Digit([0-9])$/.exec(e.code);
     if (m) { e.preventDefault(); toggleGroup((Number(m[1]) + 9) % 10); }
