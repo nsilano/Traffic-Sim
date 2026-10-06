@@ -432,8 +432,22 @@ output {
 
 /* Unsafe: a red ring and a "!" badge where the key number sits. */
 .map-sig[data-unsafe="true"] { border-color: #ff8a8d; }
-.map-sig[data-unsafe="true"] .key { background: var(--stop); color: #fff; font-size: 0; }
-.map-sig[data-unsafe="true"] .key::after { content: "!"; font-size: 0.7rem; }
+.map-sig[data-unsafe="true"]::before {
+  content: "!";
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--stop);
+  color: #fff;
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+}
 
 .bolt-dot {
   display: inline-block;
@@ -513,7 +527,7 @@ kbd {
   .map-sig { width: 34px; height: 34px; }
   .map-sig svg { width: 19px; height: 19px; }
   .map-sig .key { display: none; }
-  .map-sig[data-unsafe="true"] .key { display: block; top: -4px; right: -4px; min-width: 13px; height: 13px; line-height: 13px; }
+  .map-sig[data-unsafe="true"]::before { top: -4px; left: -4px; min-width: 13px; height: 13px; line-height: 13px; font-size: 0.6rem; }
   .cluster-buttons { gap: 3px; padding: 3px; }
   .cluster-name { font-size: 0.55rem; }
   .card { padding: 14px 16px; gap: 8px; font-size: 0.85rem; line-height: 1.4; }
@@ -544,4 +558,15 @@ kbd {
   .map-sig { width: 24px; height: 24px; }
   .map-sig svg { width: 14px; height: 14px; }
   .cluster-name { display: none; }
+}
+
+/* Phones: cards cover the whole screen instead of squeezing into the map,
+   so the Start button is always in view. */
+@media (max-width: 600px) {
+  .overlay {
+    position: fixed;
+    z-index: 20;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: rgba(14, 18, 22, 0.86);
+  }
 }

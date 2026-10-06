@@ -31,9 +31,10 @@
   // Share of drivers with each bad habit. Their mistakes never count against the player.
   const HABITS = { distracted: 0.08, stall: 0.03, tailgate: 0.015 };
   const MISTAKE_KINDS = new Set(['distracted', 'stall', 'bump']);
-  const DRAIN_PER_ANGRY = 1.6;   // patience lost per second per honking driver
+  const DRAIN_PER_ANGRY = 1.1;   // patience lost per second per honking driver
+  const MAX_DRAIN = 6;           // cap on patience lost per second
   const DRAIN_PER_BLOCKED = 4;   // per second per approach backed up off-screen
-  const REFILL_PER_CAR = 1.2;
+  const REFILL_PER_CAR = 1.6;
   const CRASH_PATIENCE = 12;
   const MAX_CRASHES = 3;
   const CONFLICT_DIST = 15;      // path centrelines closer than this can collide
@@ -664,6 +665,9 @@
         let hold = false;
         if (g.state === 'red') {
           hold = c.commit !== g.cycle;
+          // A car that committed on yellow but ended up stopped short of the
+          // line (behind a wreck or a stopped car) gives up and waits for green.
+          if (!hold && c.v < 2) { hold = true; c.commit = -1; c.racing = false; }
           if (!hold && c.racing && (c.v * c.v) / (2 * HARD_BRAKE) <= d) { hold = true; c.racing = false; }
         } else if (g.state === 'yellow' && c.commit !== g.cycle) {
           // Only a car at speed that is too close to stop goes through on
@@ -1006,7 +1010,9 @@
     let angry = 0;
     for (const c of state.cars) {
       const p = c.path;
-      if ((c.s > p.stopS + 0.5 || c.racing) && c.s - c.len < p.exitStart) state.groups[p.group].busy++;
+      const grp = state.groups[p.group];
+      const committed = c.commit === grp.cycle && grp.state !== 'green';
+      if ((c.s > p.stopS + 0.5 || c.racing || committed) && c.s - c.len < p.exitStart) grp.busy++;
       if (isAngry(c)) angry++;
     }
     for (const ped of state.peds) {
@@ -1015,7 +1021,8 @@
     }
     let blocked = 0;
     for (const k of DIR_KEYS) if (state.spawners[k].blockedFor > 1) blocked++;
-    state.patience -= (angry * DRAIN_PER_ANGRY + blocked * DRAIN_PER_BLOCKED) * dt;
+    const drain = Math.min(MAX_DRAIN, angry * DRAIN_PER_ANGRY + blocked * DRAIN_PER_BLOCKED);
+    state.patience = Math.max(0, state.patience - drain * dt);
     if (!hasLimits()) { state.patience = Math.max(0, state.patience); return; }
 
     if (state.failAt === null) {
@@ -1978,7 +1985,11 @@
     else if (action === 'levels') showLevelSelect();
     else if (action === 'pick') loadLevel(Number(btn.dataset.level));
     else if (action === 'next') loadLevel(state.levelIndex + 1);
-    else if (action === 'retry') { if (state.freeplay) setupFreeplay(state.freeplay, false); else loadLevel(state.levelIndex); }
+    else if (action === 'retry') {
+      // Retry skips the intro and goes straight back to work.
+      if (state.freeplay) setupFreeplay(state.freeplay, false);
+      else { loadLevel(state.levelIndex); startLevel(); }
+    }
     else if (action === 'freeplay-setup') showFreeplaySetup();
     else if (action === 'freeplay-start') {
       const f = readFreeplayForm();
