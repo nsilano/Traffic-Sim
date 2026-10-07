@@ -26,6 +26,13 @@ jobs:
         env:
           P8: ${{ secrets.ASC_KEY_P8 || secrets.ASC_KEY }}
         run: |
+          # strip stray spaces or line breaks that can sneak in when pasting the secrets
+          TEAM=$(printf '%s' "$TEAM" | tr -d '[:space:]'); KEY_ID=$(printf '%s' "$KEY_ID" | tr -d '[:space:]'); ISSUER=$(printf '%s' "$ISSUER" | tr -d '[:space:]')
+          echo "::add-mask::$TEAM"; echo "::add-mask::$KEY_ID"; echo "::add-mask::$ISSUER"
+          { echo "TEAM=$TEAM"; echo "KEY_ID=$KEY_ID"; echo "ISSUER=$ISSUER"; } >> "$GITHUB_ENV"
+          echo "Team ID length: ${#TEAM} (should be 10), Key ID length: ${#KEY_ID} (should be 10)"
+          if [ "${#TEAM}" != 10 ]; then echo "::error title=TEAM_ID::The TEAM_ID secret is ${#TEAM} characters long; a Team ID is 10. Check it on developer.apple.com → Membership details."; fi
+          if [ "${#KEY_ID}" != 10 ]; then echo "::error title=ASC_KEY_ID::The ASC_KEY_ID secret is ${#KEY_ID} characters long; a Key ID is 10."; fi
           if [ -n "$TEAM" ] && [ -n "$KEY_ID" ] && [ -n "$ISSUER" ] && [ -n "$P8" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
