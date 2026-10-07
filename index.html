@@ -76,14 +76,6 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
         </button>
       </div>
-      <div class="goal-bar" aria-hidden="true"><span id="goal-fill"></span></div>
-      <div class="patience" id="patience-row">
-        <span class="mono-label">Patience</span>
-        <div class="bar" id="patience-bar" role="progressbar" aria-label="City patience" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" data-level="ok">
-          <div class="bar-fill" id="patience-fill"></div>
-        </div>
-        <span class="mono-value" id="patience-value">100%</span>
-      </div>
     </header>
     <div class="hazard thin" aria-hidden="true"></div>
 
@@ -95,13 +87,26 @@
       </div>
     </div>
 
-    <div class="freeplay-bar" id="freeplay-bar" hidden>
-      <label class="mono-label" for="live-density">Traffic density</label>
-      <input type="range" id="live-density" min="1" max="10" step="1" value="5">
-      <output id="live-density-value" for="live-density">Normal (5)</output>
-      <span class="flow-state" id="flow-state"></span>
-      <span class="fp-best" id="fp-best"></span>
-    </div>
+    <footer class="dock" id="dock">
+      <div class="hazard thin" aria-hidden="true"></div>
+      <div class="dock-inner">
+        <div class="goal-bar" aria-hidden="true"><span id="goal-fill"></span></div>
+        <div class="patience" id="patience-row">
+          <span class="mono-label">Patience</span>
+          <div class="bar" id="patience-bar" role="progressbar" aria-label="City patience" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" data-level="ok">
+            <div class="bar-fill" id="patience-fill"></div>
+          </div>
+          <span class="mono-value" id="patience-value">100%</span>
+        </div>
+        <div class="freeplay-bar" id="freeplay-bar" hidden>
+          <label class="mono-label" for="live-density">Traffic density</label>
+          <input type="range" id="live-density" min="1" max="10" step="1" value="5">
+          <output id="live-density-value" for="live-density">Normal (5)</output>
+          <span class="flow-state" id="flow-state"></span>
+          <span class="fp-best" id="fp-best"></span>
+        </div>
+      </div>
+    </footer>
   </section>
 
   <div class="overlay" id="overlay" hidden>

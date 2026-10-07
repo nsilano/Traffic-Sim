@@ -188,12 +188,15 @@ kbd {
 .menu-links button:focus-visible { outline-color: var(--ink); }
 
 /* ---- Game screen ---- */
-.game { display: flex; flex-direction: column; }
+/* Readout on top, map in the middle, a dock at the bottom that takes up any
+   spare height, so the screen is filled edge to edge on any size. */
+.game { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
 
 .hud {
   background: var(--yellow);
   color: var(--ink);
-  padding: calc(12px + var(--safe-top)) calc(16px + env(safe-area-inset-right, 0px)) 10px calc(16px + env(safe-area-inset-left, 0px));
+  /* Sits right under the status bar. */
+  padding: max(12px, calc(var(--safe-top) + 4px)) calc(16px + env(safe-area-inset-right, 0px)) 10px calc(16px + env(safe-area-inset-left, 0px));
   display: grid;
   gap: 8px;
 }
@@ -223,7 +226,7 @@ kbd {
 #stat-crashes[data-level="warn"] { color: #8a3a00; }
 #stat-crashes[data-level="bad"] { color: #b3161c; }
 
-.goal-bar { height: 4px; border-radius: 2px; background: rgba(20, 20, 20, 0.18); overflow: hidden; }
+.goal-bar { height: 6px; border-radius: 3px; background: rgba(20, 20, 20, 0.18); overflow: hidden; }
 .goal-bar span { display: block; height: 100%; width: 0; background: var(--ink); transition: width 0.3s; }
 
 .patience { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
@@ -233,7 +236,17 @@ kbd {
 .bar[data-level="bad"] .bar-fill { background: #b3161c; }
 .mono-value { font-family: var(--font-data); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
 
-.play { display: grid; gap: 10px; padding: 10px 12px calc(14px + var(--safe-bottom)); }
+.play { flex: none; display: grid; padding: 10px 12px; }
+
+.dock { flex: 1 0 auto; display: flex; flex-direction: column; background: var(--yellow); color: var(--ink); }
+.dock-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px calc(16px + env(safe-area-inset-right, 0px)) calc(12px + var(--safe-bottom)) calc(16px + env(safe-area-inset-left, 0px));
+}
 
 .board-wrap {
   position: relative;
@@ -321,13 +334,20 @@ kbd {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   transition: border-color 0.4s, box-shadow 0.4s;
 }
+.name-short { display: none; }
+/* Stacked sets: buttons in a column and short labels, for tall boards. */
+.signals[data-stack="col"] .cluster-buttons { flex-direction: column; }
+.signals[data-stack="col"] .name-long, .signals[data-stack="col"] .head-word, .signals[data-stack="col"] .head-busiest-word { display: none; }
+.signals[data-stack="col"] .name-short { display: inline; }
 .head[data-busiest="true"] .cluster-buttons { border-color: var(--yellow); box-shadow: 0 0 16px rgba(245, 184, 0, 0.5); }
 
 .map-sig {
   pointer-events: auto;
   position: relative;
-  width: 44px;
-  height: 44px;
+  /* 44pt: a comfortable finger target. game.js shrinks --sig only when a
+     map's signal sets wouldn't otherwise fit on the screen. */
+  width: var(--sig, 44px);
+  height: var(--sig, 44px);
   min-height: 0;
   padding: 0;
   border-radius: 50%;
@@ -346,7 +366,7 @@ kbd {
 .map-sig:not(:disabled):active { transform: scale(0.94); }
 .map-sig:disabled { opacity: 1; }
 .map-sig .arrow { display: grid; place-items: center; }
-.map-sig svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.map-sig svg { width: calc(var(--sig, 44px) / 2); height: calc(var(--sig, 44px) / 2); fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
 
 .map-sig .key, .map-sig .count {
   position: absolute;
@@ -381,21 +401,18 @@ kbd {
 
 /* ---- Freeplay bar ---- */
 .freeplay-bar {
-  margin: 0 12px 16px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px 12px;
-  background: var(--ink-2);
-  border: 2px solid var(--ink-3);
-  border-radius: 12px;
-  padding: 10px 12px;
-  color: var(--yellow);
+  color: var(--ink);
 }
 input[type="range"] { width: 100%; accent-color: var(--yellow); margin: 0; }
+.freeplay-bar input[type="range"] { accent-color: var(--ink); }
+.freeplay-bar output { color: var(--ink); }
 output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 11ch; text-align: right; color: var(--paper); }
-.fp-best { grid-column: 1 / -1; font-family: var(--font-data); font-size: 0.72rem; color: var(--dim); }
-.flow-state { grid-column: 1 / -1; font-family: var(--font-data); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--yellow); }
+.fp-best { grid-column: 1 / -1; min-height: 1.3em; font-family: var(--font-data); font-size: 0.72rem; color: rgba(20, 20, 20, 0.72); }
+.flow-state { grid-column: 1 / -1; min-height: 1.3em; font-family: var(--font-data); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
 
 /* ---- Cards (modal over menu or game) ---- */
 .overlay {
@@ -494,26 +511,26 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 
 /* ---- Phones ---- */
 /* Small boards (narrow phones, or any phone on its side) get compact signal sets. */
-@media (max-width: 460px), (orientation: landscape) and (max-height: 560px) {
-  .map-sig { width: 32px; height: 32px; border-width: 2px; }
-  .map-sig svg { width: 18px; height: 18px; }
-  .map-sig.walk { border-radius: 8px; }
+@media (max-width: 460px), (orientation: landscape) and (max-height: 560px), (orientation: landscape) and (pointer: coarse) {
+  .map-sig { border-width: 2px; }
+  .map-sig.walk { border-radius: 10px; }
   .map-sig .key { display: none; }
   .map-sig .count { min-width: 13px; height: 13px; line-height: 13px; font-size: 0.55rem; bottom: -5px; right: -5px; }
   .map-sig[data-unsafe="true"]::before { width: 13px; height: 13px; line-height: 11px; font-size: 0.6rem; top: -5px; left: -5px; }
-  .cluster-buttons { gap: 2px; padding: 2px; border-radius: 8px; }
+  .cluster-buttons { gap: 4px; padding: 3px; border-radius: 10px; }
   .cluster-name, .cluster-wait { font-size: 0.52rem; padding: 0 4px; letter-spacing: 0.04em; }
   .cluster-wait .head-count { font-size: 0.62rem; }
   .head-busiest-word { display: none; }
 }
 
 @media (max-width: 460px) {
-  .hud { padding: calc(10px + var(--safe-top)) 12px 8px; }
+  .hud { padding: max(10px, calc(var(--safe-top) + 2px)) 12px 8px; }
   .score-line { font-size: 1.6rem; }
   .cleared-line { font-size: 1.3rem; }
   /* The map runs edge to edge on a phone. */
-  .play { padding: 0 0 calc(10px + var(--safe-bottom)); gap: 8px; }
+  .play { padding: 0; }
   .board-wrap { border-radius: 0; }
+  .dock-inner { padding: 10px 12px calc(10px + var(--safe-bottom)); gap: 8px; }
   .hud-score .mono-label { font-size: 0.6rem; letter-spacing: 0.06em; white-space: normal; line-height: 1.2; }
   .hud-score .post-part { display: none; }
   .hud-cleared .time-part { display: block; }
@@ -522,7 +539,7 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
   .lamp-labels { grid-template-rows: repeat(3, 98px); }
   .housing { width: 116px; }
   .menu-lamp { width: 86px; height: 86px; }
-  .freeplay-bar { grid-template-columns: minmax(0, 1fr) auto; margin: 0 8px 12px; }
+  .freeplay-bar { grid-template-columns: minmax(0, 1fr) auto; }
   .freeplay-bar .mono-label { grid-column: 1 / -1; }
   .card { padding: 16px; gap: 8px; }
   .card h2 { font-size: 1.3rem; }
@@ -535,30 +552,34 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 
 @media (max-width: 400px) {
   .map-list, .flow-list { grid-template-columns: minmax(0, 1fr); }
-  .map-sig { width: 28px; height: 28px; }
-  .map-sig svg { width: 16px; height: 16px; }
 }
 
 @media (max-width: 350px) {
   .head-busiest { display: none; }
   .head[data-busiest="true"] .head-busiest { display: inline-block; }
   .cluster-name, .cluster-wait { letter-spacing: 0; }
-  .map-sig { width: 24px; height: 24px; }
-  .map-sig svg { width: 14px; height: 14px; }
   .head-word { display: none; }
   .score-line { font-size: 1.3rem; }
   .cleared-line { font-size: 1.1rem; }
   .hud-cleared .mono-label { font-size: 0.55rem; }
 }
 
-/* ---- Phones on their side: readout on the left, map filling the height ---- */
-@media (orientation: landscape) and (max-height: 560px) {
+/* ---- Phones and tablets on their side: readout and dock on the left, map filling the height ---- */
+@media (orientation: landscape) and (max-height: 560px), (orientation: landscape) and (pointer: coarse) {
   .app { max-width: none; }
-  .game { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr; height: 100vh; height: 100dvh; }
-  .game > .hud { grid-column: 1; grid-row: 1; align-content: start; }
+  .game { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr; height: 100vh; height: 100dvh; min-height: 0; }
+  .game > .hud { grid-column: 1; grid-row: 1; align-content: start; padding-top: max(12px, calc(var(--safe-top) + 4px)); }
   .game > .hazard.thin { display: none; }
-  .game > .play { grid-column: 2; grid-row: 1 / span 2; padding: 8px; }
-  .board-wrap { width: calc(100vh - 16px); width: calc(100dvh - 16px); }
-  .game > .freeplay-bar { grid-column: 1; grid-row: 2; align-self: start; margin: 10px 12px; }
+  .game > .play { grid-column: 2; grid-row: 1 / span 2; padding: 0 env(safe-area-inset-right, 0px) 0 0; background: var(--ink); }
+  .game > .dock { grid-column: 1; grid-row: 2; }
+  .dock-inner { justify-content: flex-start; padding-left: calc(16px + env(safe-area-inset-left, 0px)); }
+  .board-wrap { width: 100vh; width: 100dvh; border-radius: 0; }
   .hud-score .post-part { display: none; }
+}
+
+/* Touch screens use the whole width (no desktop column), map edge to edge. */
+@media (pointer: coarse) {
+  .app { max-width: none; }
+  .play { padding: 0; }
+  .board-wrap { border-radius: 0; }
 }

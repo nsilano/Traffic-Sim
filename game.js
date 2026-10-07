@@ -1387,19 +1387,39 @@
   const toView = (g, sx = 0, sy = 0) => g.setTransform(scale, 0, 0, scale, -view.x0 * scale + sx, sy);
 
   // Size the board to the space below the readout.
+  // What the dock shows: the goal and patience in a shift, the traffic
+  // controls in freeplay.
+  function syncDock() {
+    const fp = !!state?.freeplay;
+    ui.goalFill.parentElement.hidden = fp;
+    ui.patienceRow.hidden = fp;
+    ui.freeplayBar.hidden = !fp;
+  }
+
+  // Same test as the side-by-side layout in style.css.
+  const SIDEWAYS = '(orientation: landscape) and (max-height: 560px), (orientation: landscape) and (pointer: coarse)';
   function fitBoard() {
     const wrap = canvas.parentElement, play = wrap.parentElement;
     wrap.style.aspectRatio = ''; wrap.style.maxWidth = '';
-    if (matchMedia('(orientation: landscape) and (max-height: 560px)').matches) return;
+    view.aspect = W;
+    if (matchMedia(SIDEWAYS).matches) return;
     const cs = getComputedStyle(play);
     const availW = play.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    if (availW >= 600) return; // big screens show the whole square
+    // A desktop window shows the whole square; touch screens and narrow
+    // windows fill their height.
+    if (availW >= 600 && !matchMedia('(pointer: coarse)').matches) return;
+    if (!(availW > 0)) return;
     const top = wrap.getBoundingClientRect().top + window.scrollY;
-    // Leave room for the freeplay bar even while a card hides it.
-    const below = (state?.freeplay ? (ui.freeplayBar.offsetHeight || 100) + 12 : 0) + parseFloat(cs.paddingBottom);
-    const availH = window.innerHeight - top - below;
+    // The dock below keeps the height its contents need and takes the rest.
+    syncDock();
+    const dock = el('dock');
+    dock.style.flex = 'none';
+    const below = dock.offsetHeight + parseFloat(cs.paddingBottom);
+    dock.style.flex = '';
+    const availH = window.innerHeight - top - below - 6; // a little slack for text that reflows
     if (!(availW > 0 && availH > 0)) return;
-    const viewW = Math.max(view.min, Math.min(W, (W * availW) / availH));
+    view.aspect = Math.min(W, (W * availW) / availH);
+    const viewW = Math.max(view.min, view.aspect);
     if (viewW < W) wrap.style.aspectRatio = `${viewW} / ${H}`;
     // Never taller than the space: narrow the board instead.
     if ((availW * H) / viewW > availH) wrap.style.maxWidth = `${Math.floor((availH * viewW) / H)}px`;
@@ -1434,19 +1454,55 @@
     // in view, then make sure every signal set fits (measured once placed).
     view.min = Math.min(W, Math.max(MIN_VIEW_W, (geo.box.x1 - CX + 150) * 2));
     sizeCanvas();
-    const need = signalSetsWidth();
-    if (need > view.w + 1 && view.w < W) { view.min = Math.min(W, need); sizeCanvas(); }
+    arrangeSignals(view.aspect);
+    sizeCanvas();
     drawBackground(background.getContext('2d'));
     drawOverlay(overlay.getContext('2d'));
   }
 
+  // Pick how the signal sets are drawn: buttons in a row, or stacked in a
+  // column (narrow, which suits a tall phone board on a map with wide
+  // roads), and how big. Buttons stay 44pt, a comfortable finger target,
+  // unless nothing fits; among what fits, take whatever shows the map biggest.
+  function arrangeSignals(aspectView) {
+    const sig = ui.signals;
+    const boardW = canvas.getBoundingClientRect().width;
+    if (!boardW || !ui.heads?.length) return;
+    const portrait = !matchMedia(SIDEWAYS).matches && aspectView < W;
+    let best = null;
+    for (let size = 44; size >= 30 && !best; size -= 2) {
+      for (const stack of portrait ? ['row', 'col'] : ['row']) {
+        sig.dataset.stack = stack;
+        sig.style.setProperty('--sig', `${size}px`);
+        const v = Math.max(view.min, aspectView, signalSetsWidth());
+        if (v > W + 0.5) continue;
+        // Stacked sets are tall: at this zoom they must still fit in the
+        // height between their corner and the top or bottom of the map.
+        const pxPerUnit = boardW / v;
+        const tall = ui.heads.some(h => (Math.abs(h.dataset.wy - CY) * pxPerUnit) + h.offsetHeight + 8 > (H / 2) * pxPerUnit);
+        if (tall) continue;
+        if (!best || v < best.v - 1) best = { v, size, stack };
+      }
+    }
+    best ||= { v: W, size: 30, stack: 'row' };
+    sig.dataset.stack = best.stack;
+    sig.style.setProperty('--sig', `${best.size}px`);
+    view.min = Math.max(view.min, Math.min(W, best.v));
+  }
+
   // The view width needed so no signal set hangs off the side of the board.
+  // A set's anchor sits |wx - CX| map units from the middle and the set
+  // reaches its pixel width beyond that, so with the board B pixels wide and
+  // a view V units wide it fits when |wx - CX| * B / V + width <= B / 2.
   function signalSetsWidth() {
-    const pxPerUnit = canvas.getBoundingClientRect().height / H;
-    if (!pxPerUnit || !ui.heads) return 0;
-    let half = 0;
-    for (const head of ui.heads) half = Math.max(half, Math.abs(head.dataset.wx - CX) + (head.offsetWidth + 10) / pxPerUnit);
-    return half * 2;
+    const boardW = canvas.getBoundingClientRect().width;
+    if (!boardW || !ui.heads) return 0;
+    let need = 0;
+    for (const head of ui.heads) {
+      const room = boardW / 2 - head.offsetWidth - 10;
+      need = Math.max(need, room > 0 ? (Math.abs(head.dataset.wx - CX) * boardW) / room : W);
+    }
+    return need;
   }
 
   function sizeCanvas() {
@@ -2409,7 +2465,7 @@
       const ex = Math.sign(-d.x + r.x), ey = Math.sign(-d.y + r.y);
       return `<div class="cluster head" data-dir="${k}" data-level="ok" data-x="${ex > 0 ? 'right' : 'left'}" data-y="${ey > 0 ? 'down' : 'up'}"
           data-wx="${x}" data-wy="${y}">
-        <span class="cluster-name"><span class="head-name">${DIRS[k].name} ${DIR_ARROW[k]}</span><span class="head-busiest" title="Busiest">★<span class="head-busiest-word"> Busiest</span></span></span>
+        <span class="cluster-name"><span class="head-name"><span class="name-long">${DIRS[k].name}</span><span class="name-short">${DIRS[k].name.replace('bound', '')}</span> ${DIR_ARROW[k]}</span><span class="head-busiest" title="Busiest">★<span class="head-busiest-word"> Busiest</span></span></span>
         <div class="cluster-buttons">${carButtons.join('')}${walkButtons.join('')}</div>
         <span class="cluster-wait"><span class="head-count">0</span><span class="head-word"> waiting</span><span class="head-oldest"></span></span>
       </div>`;
@@ -2511,11 +2567,11 @@
     ui.level.textContent = fp ? 'Freeplay' : `${state.levelIndex + 1}. ${lvl.name}`;
     ui.post.textContent = lvl.street;
     ui.cleared.textContent = fp ? String(state.cleared) : `${Math.min(state.cleared, lvl.goal)} / ${lvl.goal}`;
+    syncDock();
     ui.goalFill.style.width = fp ? '0%' : Math.min(100, (state.cleared / lvl.goal) * 100) + '%';
     ui.crashes.textContent = hasLimits() ? `${state.crashes} / ${MAX_CRASHES}` : String(state.crashes);
     ui.crashes.dataset.level = state.crashes === 0 ? 'ok' : !hasLimits() || state.crashes < MAX_CRASHES - 1 ? 'warn' : 'bad';
-    ui.freeplayBar.hidden = !fp || !ui.overlay.hidden;
-    ui.patienceRow.hidden = !!fp;
+
     if (fp) ui.liveDensityValue.textContent = densityName(fp.density);
     ui.time.textContent = fmtTime(state.t);
     ui.score.textContent = fmtNum(state.score);
