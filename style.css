@@ -22,6 +22,12 @@
 [hidden] { display: none !important; }
 html, body { height: 100%; }
 
+/* The screen stays fixed: no double-tap or pinch zoom, quick taps register
+   as separate taps, and long presses don't select text or pop up a menu. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+*, *::before, *::after { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.app { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
 body {
   margin: 0;
   background: var(--ink);

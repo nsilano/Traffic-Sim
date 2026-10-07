@@ -355,6 +355,9 @@
       boxKey: exitDir + boxLane,     // lane the car is in right after the box
       merges: !!shift,
       mergeS: cum[jEnd] + g.mergeStart,
+      // Where a merging car's body starts to cross into the next lane: it has
+      // to be in line behind (or clearly ahead of) traffic there by here.
+      mergeAt: cum[jEnd] + g.mergeStart + g.mergeLen * 0.4,
     };
   }
 
@@ -619,10 +622,29 @@
 
   const between = ([a, b]) => a + Math.random() * (b - a);
 
+  // How bold each kind of driver is with a yellow light.
+  const NERVE = { speeder: [0.55, 1], commuter: [0.25, 0.8], cautious: [0, 0.3], truck: [0.15, 0.55] };
+
+  // Does this driver go for it? They estimate how long they'd take to reach
+  // the line at full acceleration and go if that fits their idea of enough
+  // yellow left (bold drivers are happy to arrive just after it turns red).
+  // Nobody starts from far back, and only the bold go from a crawl.
+  function goesOnYellow(c, d, left) {
+    if (state.wrecks.length && wreckOnPath(c)) return false;
+    if (d > 40 + 170 * c.nerve) return false;
+    if (c.v < 20 && c.nerve < 0.6) return false;
+    const top = c.beater ? c.maxV * BEATER_BOOST : c.maxV;
+    const accel = c.beater ? c.accel * 1.6 : c.accel;
+    const tTop = (top - c.v) / accel, dTop = (c.v + top) / 2 * tTop;
+    const t = d <= dTop ? (-c.v + Math.sqrt(c.v * c.v + 2 * accel * d)) / accel : tTop + (d - dTop) / top;
+    return t <= left * (0.45 + 0.9 * c.nerve);
+  }
+
   function makeCar(path) {
     const truck = Math.random() < 0.12;
     const r = Math.random();
     const type = truck ? 'truck' : r < 0.2 ? 'speeder' : r < 0.35 ? 'cautious' : 'commuter';
+    const beater = Math.random() < BEATER_SHARE;
     const prof = DRIVERS[type];
     // A few drivers have a bad habit that shows up now and then.
     const h = Math.random();
@@ -636,7 +658,9 @@
       color: truck ? pick(TRUCK_COLORS) : pick(CAR_COLORS),
       truck, type,
       maxV: between(prof.maxV), accel: prof.accel, gapPref: prof.gap, react: between(prof.react),
-      beater: Math.random() < BEATER_SHARE, racing: false,
+      beater, racing: false,
+      // How readily this driver runs a yellow, 0 (never) to 1.
+      nerve: beater ? 1 : between(NERVE[type]),
       habit, bumped: false,
       wait: 0, commit: -1, decided: -1,
       hold: 0, holdKind: null, stoppedFor: 0, starting: false,
@@ -700,10 +724,15 @@
       (byBox[c.path.boxKey] ||= []).push(c);
     }
     // Crosswalks with someone on the road right now.
-    const pedsOnRoad = new Set();
-    // (Someone who has given up waiting on a car doesn't hold up turning
-    // drivers; they walk around them instead.)
-    for (const ped of state.peds) if (ped.state === 'crossing' && ped.paused < PED_PATIENCE && ped.v > ped.cw.road0 - 4 && ped.v < ped.cw.road1 + 4) pedsOnRoad.add(ped.cw);
+    // (Someone waiting on, or stepping around, a particular car doesn't hold
+    // up that car: it pulls away and lets them through. Everyone else does.)
+    const pedsOnRoad = new Map();
+    for (const ped of state.peds) {
+      if (ped.state !== 'crossing' || ped.v <= ped.cw.road0 - 4 || ped.v >= ped.cw.road1 + 4) continue;
+      if (!pedsOnRoad.has(ped.cw)) pedsOnRoad.set(ped.cw, []);
+      pedsOnRoad.get(ped.cw).push(ped);
+    }
+    const crossingFor = (cw, c) => pedsOnRoad.get(cw)?.some(ped => ped.blocker !== c);
 
     // Lanes held up by a driver's own mistake: nobody there loses patience.
     const mistakeLanes = new Set();
@@ -730,23 +759,34 @@
         if (gl < gap) { gap = gl; lead = o; }
       }
       const ec = c.s - p.exitStart;
-      const cWaitingToMerge = p.merges && c.s < p.mergeS;
+      const cWaitingToMerge = p.merges && c.s < p.mergeAt;
+      let mergeCap = Infinity;
       for (const o of byExit[p.exitKey]) {
         if (o === c) continue;
         const eo = o.s - o.path.exitStart;
-        const oWaitingToMerge = o.path.merges && o.s < o.path.mergeS;
+        const oWaitingToMerge = o.path.merges && o.s < o.path.mergeAt;
         if (o.path !== p) {
-          // Zipper merge: whoever is ahead goes first. A merging car slots in
-          // behind a car that's level with or ahead of it (it can always
-          // drive up to the merge point)...
+          // Zipper merge, decided the same way from both sides: a merging car
+          // that's clearly ahead (its tail past the other car's nose) goes
+          // first; otherwise it drops in behind. Nobody stops for a car
+          // beside them: the merging driver eases off and slips in behind
+          // while still moving, using the taper up to the merge point.
+          // Only cars already out on the road past the box count here; one
+          // still waiting at its own light isn't in the lane yet.
           if (cWaitingToMerge && !oWaitingToMerge) {
-            if (eo >= ec) gap = Math.min(gap, Math.max(eo - o.len - ec, p.mergeS - c.s));
+            if (eo <= 0 || mergesAhead(c, ec, o, eo)) continue;
+            const behind = eo - o.len - ec;
+            if (behind >= 0) gap = Math.min(gap, behind);
+            else {
+              gap = Math.min(gap, Math.max(0, p.mergeAt - c.s));
+              mergeCap = Math.min(mergeCap, o.v * 0.75);
+            }
             continue;
           }
-          // ...and a car in the continuing lane makes room for a merging car
-          // that's ahead of it and close to the merge point.
+          // ...and a car in the continuing lane lets in a merging car that's
+          // clearly ahead of it and close to the merge point.
           if (oWaitingToMerge && !cWaitingToMerge) {
-            if (eo > ec && o.s > o.path.mergeS - 70) gap = Math.min(gap, eo - o.len - ec);
+            if (eo > 0 && mergesAhead(o, eo, c, ec) && o.s > o.path.mergeAt - 90) gap = Math.min(gap, eo - o.len - ec);
             continue;
           }
         }
@@ -756,7 +796,7 @@
       // Turning drivers stop short of a crosswalk while anyone is crossing it.
       if (p.move !== 'T' && pedsOnRoad.size) {
         for (const x of p.crossings) {
-          if (!pedsOnRoad.has(x.cw) || c.s >= x.s0 - 6 || x.s0 - c.s > 90) continue;
+          if (!crossingFor(x.cw, c) || c.s >= x.s0 - 6 || x.s0 - c.s > 90) continue;
           if ((c.v * c.v) / (2 * HARD_BRAKE) <= x.s0 - c.s - 7) gap = Math.min(gap, x.s0 - 7 - c.s + c.gapPref);
         }
       }
@@ -782,6 +822,8 @@
         if (tailgating && gap <= 1) { bump(c, lead); continue; }
       }
       if (!tailgating) vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * Math.max(0, gap - c.gapPref)));
+      // Ease off towards the merge speed rather than braking hard.
+      if (mergeCap < vMax) vMax = Math.min(vMax, Math.max(mergeCap, c.v - BRAKE * dt));
 
       // Obey the signal while still before the stop line.
       let mustStop = false;
@@ -796,19 +838,19 @@
           if (!hold && c.v < 2) { hold = true; c.commit = -1; c.racing = false; }
           if (!hold && c.racing && (c.v * c.v) / (2 * HARD_BRAKE) <= d) { hold = true; c.racing = false; }
         } else if (g.state === 'yellow' && c.commit !== g.cycle) {
-          // Only a car at speed that is too close to stop goes through on
-          // yellow. A slow car (one just pulling away from the line) stops,
-          // otherwise it crawls across the box long after the light is red.
+          // Every driver makes their own call on a yellow. One too close to
+          // stop goes; otherwise it depends on their nerve, how close they
+          // are and how much yellow is left. Bold drivers will go from further
+          // back, or from a crawl, and some only reach the line as it turns
+          // red, so the box can take a while to clear.
           const tooClose = (c.v * c.v) / (2 * HARD_BRAKE) > d;
           if (tooClose && c.v >= MIN_COMMIT_SPEED) c.commit = g.cycle;
           else if (c.decided !== g.cycle) {
-            // Yellow-light racers floor it if they can reach the line before red.
             c.decided = g.cycle;
-            const left = YELLOW_TIME - g.timer;
-            const reach = ((c.v + c.maxV * BEATER_BOOST) / 2) * left * 0.8;
-            if (c.beater && c.v > 30 && d < reach && !(state.wrecks.length && wreckOnPath(c))) {
+            if (goesOnYellow(c, d, YELLOW_TIME - g.timer)) {
               c.commit = g.cycle;
-              c.racing = true;
+              // Yellow-light racers floor it.
+              c.racing = c.beater;
             } else hold = true;
           } else hold = true;
         }
@@ -871,6 +913,14 @@
     state.cars = keep;
   }
 
+  // Is merging car m clearly ahead of car t in the lane it's merging into?
+  // Its tail has to be past t's nose, with room for t to slow down behind it
+  // comfortably. Both drivers use this same test, so exactly one gives way.
+  function mergesAhead(m, em, t, et) {
+    const room = em - m.len - et;
+    return room >= 2 && (t.v * t.v) / (2 * BRAKE) <= room + 20;
+  }
+
   function pedNear(c) {
     const mid = pointAt(c.path, c.s - c.len / 2);
     let body = null;
@@ -881,7 +931,7 @@
       // Someone who has stopped to let this car go (or is stepping around
       // it) isn't in its way unless they're right in front of it.
       body ||= bodyCircles(c);
-      if (!(ped.paused > 0) && body.some(b => dist(at, b) < b.r + 8)) return true;
+      if (ped.blocker !== c && body.some(b => dist(at, b) < b.r + 8)) return true;
       for (let q = 0; q <= 18; q += 6) {
         if (dist(pointAt(c.path, c.s + q), at) < c.wid / 2 + 7) return true;
       }
@@ -1085,16 +1135,18 @@
         // Hurry once the hand starts flashing.
         // Wait for a car in the way, but only briefly: after that, squeeze
         // past it. This way a person and a driver never wait on each other forever.
-        if (carAhead(ped) && ped.paused < PED_PATIENCE) {
+        // The car this person is waiting on (or stepping around), if any.
+        const blocker = ped.blocker = carAhead(ped);
+        if (blocker && ped.paused < PED_PATIENCE) {
           ped.paused += dt;
-        } else if (ped.paused >= PED_PATIENCE && carAhead(ped) && sidestep(ped, dt)) {
+        } else if (ped.paused >= PED_PATIENCE && blocker && sidestep(ped, dt)) {
           // Walking around the car's bumper.
           ped.phase += dt * 10;
         } else {
           // Once someone has run out of patience with a car they stay that
           // way for the rest of the crossing, so a driver and a walker can't
           // keep politely waiting on each other.
-          if (ped.paused < PED_PATIENCE && !carAhead(ped)) ped.paused = 0;
+          if (ped.paused < PED_PATIENCE && !blocker) ped.paused = 0;
           ped.v += ped.dir * ped.speed * (g.state === 'green' ? 1 : 1.5) * dt;
           ped.phase += dt * 10;
         }
@@ -1173,9 +1225,9 @@
     const next = cwPoint(ped.cw, ped.v + ped.dir * 7, du);
     for (const c of state.cars) {
       if (dist(next, pointAt(c.path, c.s - c.len / 2)) > 30) continue;
-      if (bodyCircles(c).some(b => dist(next, b) < b.r + 4)) return true;
+      if (bodyCircles(c).some(b => dist(next, b) < b.r + 4)) return c;
     }
-    return false;
+    return null;
   }
 
   function detectPedHits() {
@@ -1185,7 +1237,7 @@
       for (const c of state.cars) {
         // Only a moving car hits someone; brushing past a stopped one doesn't
         // count, and nor does pulling away from someone who stopped to let it go.
-        if (ped.paused > 0) continue;
+        if (ped.blocker === c) continue;
         if (c.v < MIN_HIT_SPEED || dist(at, pointAt(c.path, c.s - c.len / 2)) > 30) continue;
         if (bodyCircles(c).some(b => dist(at, b) < b.r + 3.5)) { pedHit(ped, c, at); break; }
       }
@@ -2731,6 +2783,7 @@
         <li>Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal.</li>
         <li>A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Two conflicting greens cause crashes.</li>
         <li>Under each set of buttons: how many are waiting there and the longest wait so far. The busiest corner gets a yellow outline and ★, and the numbers on the buttons count who's waiting for that signal.</li>
+        <li>Each driver decides for themselves whether to run a yellow, so wait for the <span class="warn-dot">!</span> to clear before switching the cross street.</li>
         <li>Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow. Turning cars wait for people; straight-through traffic on green does not.</li>
         <li>Streets start empty and fill up over the first minute. After that traffic comes in waves: it swells and eases, arrives in bunches, and now and then goes quiet or surges.</li>
         <li>Clear cars without anyone honking to build a combo up to ×3, and clear a whole queue in one green for a Green Wave bonus.</li>
@@ -3089,6 +3142,11 @@
     if (document.hidden && state.mode === 'running') togglePause();
   });
   window.addEventListener('resize', resize);
+  // Belt and braces for iOS, which can ignore the viewport's no-zoom setting:
+  // swallow pinch gestures and double-tap zoom so the screen never moves.
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, e => e.preventDefault(), { passive: false });
+  document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
   // ---- Main loop ----
   let last = performance.now();

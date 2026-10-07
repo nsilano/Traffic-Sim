@@ -25,6 +25,8 @@ Every car gets a driver with its own habits:
 
 - **Commuters** (most drivers) cruise at a normal speed. **Speeders** are faster, quicker off the line and follow closer. **Cautious** drivers are slower, react later and leave bigger gaps. **Trucks** are slow to accelerate.
 - Everyone takes a moment to react when the light turns green or the car ahead pulls away.
+- **Yellow lights are each driver's call.** Every driver has their own nerve: cautious drivers and most truckers stop, commuters vary, speeders often go for it. When the light turns yellow, a driver who's close enough, or bold enough, keeps going, sometimes from a crawl or reaching the line just as it turns red, so the junction can take a moment to clear. Anyone who has decided to go counts as traffic in the box, so the red **!** on conflicting buttons stays up until they're through: wait for it before you switch.
+- **Merges** work like a zipper: a car whose lane ends eases off beside traffic in the next lane and slips in behind it, or goes first when it's clearly ahead.
 - **Yellow-light racers** (10% of drivers) wear an amber lightning bolt and outline from the moment they appear. When their light turns yellow, they speed up to beat it instead of stopping. They count as traffic in the box, so the red **!** still covers them. If one misjudges and can still stop when the light turns red, it gives up and stops.
 - **Mistakes:** some drivers are distracted at green (a … bubble), some stall (hazard lights), and some tailgaters tap the car ahead in the queue ("BUMP", hazard lights on both). These delays never cost patience and never count as crashes.
 
