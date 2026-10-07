@@ -13,6 +13,9 @@
   --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   color-scheme: dark;
+  /* Status bar and home indicator; game.js fills these in. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * { box-sizing: border-box; }
@@ -75,6 +78,7 @@ kbd {
 .menu {
   min-height: 100vh;
   min-height: 100dvh;
+  padding: var(--safe-top) 0 var(--safe-bottom);
   display: flex;
   flex-direction: column;
   background: var(--yellow);
@@ -189,7 +193,7 @@ kbd {
 .hud {
   background: var(--yellow);
   color: var(--ink);
-  padding: 12px 16px 10px;
+  padding: calc(12px + var(--safe-top)) calc(16px + env(safe-area-inset-right, 0px)) 10px calc(16px + env(safe-area-inset-left, 0px));
   display: grid;
   gap: 8px;
 }
@@ -229,11 +233,12 @@ kbd {
 .bar[data-level="bad"] .bar-fill { background: #b3161c; }
 .mono-value { font-family: var(--font-data); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
 
-.play { display: grid; gap: 10px; padding: 10px 12px 14px; }
+.play { display: grid; gap: 10px; padding: 10px 12px calc(14px + var(--safe-bottom)); }
 
 .board-wrap {
   position: relative;
   width: 100%;
+  margin-inline: auto;
   max-width: 100%;
   aspect-ratio: 1;
   border-radius: 10px;
@@ -398,7 +403,7 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
   inset: 0;
   z-index: 20;
   display: flex;
-  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom));
   overflow-y: auto;
   background: rgba(10, 10, 10, 0.72);
 }
@@ -490,8 +495,8 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 /* ---- Phones ---- */
 /* Small boards (narrow phones, or any phone on its side) get compact signal sets. */
 @media (max-width: 460px), (orientation: landscape) and (max-height: 560px) {
-  .map-sig { width: 28px; height: 28px; border-width: 2px; }
-  .map-sig svg { width: 16px; height: 16px; }
+  .map-sig { width: 32px; height: 32px; border-width: 2px; }
+  .map-sig svg { width: 18px; height: 18px; }
   .map-sig.walk { border-radius: 8px; }
   .map-sig .key { display: none; }
   .map-sig .count { min-width: 13px; height: 13px; line-height: 13px; font-size: 0.55rem; bottom: -5px; right: -5px; }
@@ -503,10 +508,12 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 }
 
 @media (max-width: 460px) {
-  .hud { padding: 10px 12px 8px; }
+  .hud { padding: calc(10px + var(--safe-top)) 12px 8px; }
   .score-line { font-size: 1.6rem; }
   .cleared-line { font-size: 1.3rem; }
-  .play { padding: 8px 8px 12px; gap: 8px; }
+  /* The map runs edge to edge on a phone. */
+  .play { padding: 0 0 calc(10px + var(--safe-bottom)); gap: 8px; }
+  .board-wrap { border-radius: 0; }
   .hud-score .mono-label { font-size: 0.6rem; letter-spacing: 0.06em; white-space: normal; line-height: 1.2; }
   .hud-score .post-part { display: none; }
   .hud-cleared .time-part { display: block; }
@@ -526,11 +533,16 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
   #score-box.pop #stat-score, .stars.animate .star[data-on="true"] { animation: none; }
 }
 
-@media (max-width: 380px) {
+@media (max-width: 400px) {
   .map-list, .flow-list { grid-template-columns: minmax(0, 1fr); }
+  .map-sig { width: 28px; height: 28px; }
+  .map-sig svg { width: 16px; height: 16px; }
 }
 
 @media (max-width: 350px) {
+  .head-busiest { display: none; }
+  .head[data-busiest="true"] .head-busiest { display: inline-block; }
+  .cluster-name, .cluster-wait { letter-spacing: 0; }
   .map-sig { width: 24px; height: 24px; }
   .map-sig svg { width: 14px; height: 14px; }
   .head-word { display: none; }

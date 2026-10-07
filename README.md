@@ -78,7 +78,7 @@ Pick **Freeplay** at the bottom of the level list to play any of the seven maps 
 | Lively (default) | Waves and bunches, quiet spells and some surges |
 | Wild | Big surges and sudden lulls, more often |
 
-Quiet spells drop to around the map's normal traffic even on Gridlock, so a jammed junction gets a chance to clear. You also choose whether rush-hour surges happen, whether pedestrians cross, and whether it's night. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic straight away while you play (with a readout of what the flow is doing: building up, picking up, easing off, quiet spell or surge), and your settings are remembered. On a phone held sideways the readout sits beside the map.
+Quiet spells drop to around the map's normal traffic even on Gridlock, so a jammed junction gets a chance to clear. You also choose whether rush-hour surges happen, whether pedestrians cross, and whether it's night. There is no patience meter and crashes never end the game, so you can run it however you like. A density slider under the map changes traffic straight away while you play (with a readout of what the flow is doing: building up, picking up, easing off, quiet spell or surge), and your settings are remembered. On a phone held sideways the readout sits beside the map. On a phone held upright the map runs edge to edge and shows a taller slice of the junction (trimming the far ends of the side roads), zoomed in as far as each map allows while keeping every signal set on screen; the readout stays clear of the status bar, even in full-screen viewers that don't report it.
 
 ## How it works
 

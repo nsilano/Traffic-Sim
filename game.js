@@ -1378,18 +1378,89 @@
   const darkness = document.createElement('canvas');  // night lighting
   const NIGHT_RES = 3;
 
+  // The visible slice of the map. Wide screens see the whole square; on a
+  // tall phone the board is taller than it is wide, so it shows the full
+  // height and trims the far ends of the side roads, which draws everything
+  // bigger. Nothing that matters lives in the trimmed strips.
+  const MIN_VIEW_W = 400;
+  const view = { x0: 0, w: W, min: MIN_VIEW_W };
+  const toView = (g, sx = 0, sy = 0) => g.setTransform(scale, 0, 0, scale, -view.x0 * scale + sx, sy);
+
+  // Size the board to the space below the readout.
+  function fitBoard() {
+    const wrap = canvas.parentElement, play = wrap.parentElement;
+    wrap.style.aspectRatio = ''; wrap.style.maxWidth = '';
+    if (matchMedia('(orientation: landscape) and (max-height: 560px)').matches) return;
+    const cs = getComputedStyle(play);
+    const availW = play.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (availW >= 600) return; // big screens show the whole square
+    const top = wrap.getBoundingClientRect().top + window.scrollY;
+    // Leave room for the freeplay bar even while a card hides it.
+    const below = (state?.freeplay ? (ui.freeplayBar.offsetHeight || 100) + 12 : 0) + parseFloat(cs.paddingBottom);
+    const availH = window.innerHeight - top - below;
+    if (!(availW > 0 && availH > 0)) return;
+    const viewW = Math.max(view.min, Math.min(W, (W * availW) / availH));
+    if (viewW < W) wrap.style.aspectRatio = `${viewW} / ${H}`;
+    // Never taller than the space: narrow the board instead.
+    if ((availW * H) / viewW > availH) wrap.style.maxWidth = `${Math.floor((availH * viewW) / H)}px`;
+  }
+
+  // Keep clear of the phone's status bar and home indicator. Browsers report
+  // these as safe-area insets, but some in-app viewers run the page full
+  // screen and report nothing; there, assume a typical status bar.
+  function applySafeArea() {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)';
+    document.body.appendChild(probe);
+    let top = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+    let bottom = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+    probe.remove();
+    const phone = matchMedia('(pointer: coarse)').matches && window.innerWidth < 600;
+    const fullScreen = Math.abs(screen.height - window.innerHeight) < 40 && window.innerHeight > window.innerWidth;
+    if (phone && fullScreen) {
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (!top) top = ios ? 54 : 28;
+      if (!bottom && ios) bottom = 20;
+    }
+    document.documentElement.style.setProperty('--safe-top', `${top}px`);
+    document.documentElement.style.setProperty('--safe-bottom', `${bottom}px`);
+  }
+
   function resize() {
+    applySafeArea();
+    // How far in this map can zoom: keep a good stretch of each side road
+    // in view, then make sure every signal set fits (measured once placed).
+    view.min = Math.min(W, Math.max(MIN_VIEW_W, (geo.box.x1 - CX + 150) * 2));
+    sizeCanvas();
+    const need = signalSetsWidth();
+    if (need > view.w + 1 && view.w < W) { view.min = Math.min(W, need); sizeCanvas(); }
+    drawBackground(background.getContext('2d'));
+    drawOverlay(overlay.getContext('2d'));
+  }
+
+  // The view width needed so no signal set hangs off the side of the board.
+  function signalSetsWidth() {
+    const pxPerUnit = canvas.getBoundingClientRect().height / H;
+    if (!pxPerUnit || !ui.heads) return 0;
+    let half = 0;
+    for (const head of ui.heads) half = Math.max(half, Math.abs(head.dataset.wx - CX) + (head.offsetWidth + 10) / pxPerUnit);
+    return half * 2;
+  }
+
+  function sizeCanvas() {
+    fitBoard();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const size = canvas.getBoundingClientRect().width;
-    if (!size) return;
-    canvas.width = Math.round(size * dpr);
-    canvas.height = Math.round(size * dpr);
-    scale = (size * dpr) / W;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    scale = canvas.height / H;
+    view.w = Math.min(W, (W * rect.width) / rect.height);
+    view.x0 = CX - view.w / 2;
+    placeHeads();
     for (const c of [background, overlay]) { c.width = canvas.width; c.height = canvas.height; }
     // Light is soft, so the night layer can be a third of the resolution.
     darkness.width = Math.ceil(canvas.width / NIGHT_RES); darkness.height = Math.ceil(canvas.height / NIGHT_RES);
-    drawBackground(background.getContext('2d'));
-    drawOverlay(overlay.getContext('2d'));
   }
 
   function seeded(seed) {
@@ -1403,7 +1474,7 @@
   }
 
   function drawBackground(g) {
-    g.setTransform(scale, 0, 0, scale, 0, 0);
+    toView(g);
     const rnd = seeded(7 + state.levelIndex * 13);
     const b = geo.box;
 
@@ -1422,7 +1493,7 @@
     if (!geo.hasLeg('S')) drawBuildings(g, left, 0, right - left, top, rnd);
     if (!geo.hasLeg('N')) drawBuildings(g, left, bottom, right - left, H - bottom, rnd);
     if (hasDecor('harbor')) drawHarbor(g, left - 4, rnd);
-    drawCompass(g, 26, H - 30);
+    drawCompass(g, view.x0 + 26, H - 30);
 
     g.fillStyle = '#3a4048';
     g.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
@@ -1527,7 +1598,7 @@
       g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 3.5, 0, Math.PI * 2); g.stroke();
     }
     // ROAD WORK diamond.
-    const sx = W - 34, sy = H - 34;
+    const sx = view.x0 + view.w - 34, sy = H - 34;
     g.save(); g.translate(sx, sy); g.rotate(Math.PI / 4);
     g.fillStyle = '#f26b1d'; g.fillRect(-11, -11, 22, 22);
     g.strokeStyle = '#141414'; g.lineWidth = 1.5; g.strokeRect(-9, -9, 18, 18);
@@ -1541,7 +1612,7 @@
   function drawOverlay(g) {
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, overlay.width, overlay.height);
-    g.setTransform(scale, 0, 0, scale, 0, 0);
+    toView(g);
     const b = geo.box;
     if (hasDecor('shadows')) {
       // Tall buildings throw long shadows across the streets.
@@ -1643,7 +1714,7 @@
     n.clearRect(0, 0, darkness.width, darkness.height);
     n.fillStyle = 'rgba(5, 9, 20, 0.82)';
     n.fillRect(0, 0, darkness.width, darkness.height);
-    n.setTransform(scale / NIGHT_RES, 0, 0, scale / NIGHT_RES, 0, 0);
+    n.setTransform(scale / NIGHT_RES, 0, 0, scale / NIGHT_RES, (-view.x0 * scale) / NIGHT_RES, 0);
     n.globalCompositeOperation = 'destination-out';
     const glow = (x, y, r, a) => {
       n.globalAlpha = a;
@@ -2152,7 +2223,7 @@
       const sp = state.spawners[k];
       if (sp.blockedFor <= 1 || !sp.pending.length) continue;
       const { d, r } = DIRS[k];
-      const u = -HALF + 44, v = geo.legRight(k) / 2;
+      const u = -(DIRS[k].d.x ? view.w / 2 : HALF) + 44, v = geo.legRight(k) / 2;
       const x = CX + d.x * u + r.x * v, y = CY + d.y * u + r.y * v;
       g.globalAlpha = 0.55 + 0.45 * Math.sin(state.pulse * 8);
       g.fillStyle = '#e5484d';
@@ -2175,7 +2246,7 @@
       sx = (Math.random() - 0.5) * amp * scale; sy = (Math.random() - 0.5) * amp * scale;
     }
     ctx.drawImage(background, sx, sy);
-    ctx.setTransform(scale, 0, 0, scale, sx, sy);
+    toView(ctx, sx, sy);
 
     drawLamps(ctx);
     drawWalkSignals(ctx);
@@ -2258,8 +2329,8 @@
     };
     const b = geo.box;
     plate(names.NS.toUpperCase(), (b.x0 + b.x1) / 2, geo.hasLeg('S') ? 16 : H - 16);
-    if (geo.hasLeg('E')) plate(names.EW.toUpperCase(), 8, (b.y0 + b.y1) / 2, 'left');
-    else plate(names.EW.toUpperCase(), W - 8, (b.y0 + b.y1) / 2, 'right');
+    if (geo.hasLeg('E')) plate(names.EW.toUpperCase(), view.x0 + 8, (b.y0 + b.y1) / 2, 'left');
+    else plate(names.EW.toUpperCase(), view.x0 + view.w - 8, (b.y0 + b.y1) / 2, 'right');
   }
 
   // ---- Controls ----
@@ -2335,7 +2406,7 @@
       const x = CX + d.x * u + r.x * v, y = CY + d.y * u + r.y * v;
       const ex = Math.sign(-d.x + r.x), ey = Math.sign(-d.y + r.y);
       return `<div class="cluster head" data-dir="${k}" data-level="ok" data-x="${ex > 0 ? 'right' : 'left'}" data-y="${ey > 0 ? 'down' : 'up'}"
-          style="left: ${(x / W) * 100}%; top: ${(y / H) * 100}%">
+          data-wx="${x}" data-wy="${y}">
         <span class="cluster-name"><span class="head-name">${DIRS[k].name} ${DIR_ARROW[k]}</span><span class="head-busiest" title="Busiest">★<span class="head-busiest-word"> Busiest</span></span></span>
         <div class="cluster-buttons">${carButtons.join('')}${walkButtons.join('')}</div>
         <span class="cluster-wait"><span class="head-count">0</span><span class="head-word"> waiting</span><span class="head-oldest"></span></span>
@@ -2345,9 +2416,18 @@
     ui.signals.innerHTML = blocks.join('');
     ui.signalButtons = [...ui.signals.querySelectorAll('.map-sig')];
     ui.heads = [...ui.signals.querySelectorAll('.head')];
+    placeHeads();
     ui.monitorAt = -1;
     ui.busiest = null;
     ui.challenger = null;
+  }
+
+  // Put each signal set at its corner of the visible map.
+  function placeHeads() {
+    for (const head of ui.heads || []) {
+      head.style.left = `${((head.dataset.wx - view.x0) / view.w) * 100}%`;
+      head.style.top = `${(head.dataset.wy / H) * 100}%`;
+    }
   }
 
   // Counts for the corner monitors: cars queued at each approach (and off the map),
@@ -2927,7 +3007,7 @@
   // Tapping a lamp on the road toggles its signal group.
   canvas.addEventListener('pointerdown', e => {
     const rect = canvas.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * W;
+    const x = view.x0 + ((e.clientX - rect.left) / rect.width) * view.w;
     const y = ((e.clientY - rect.top) / rect.height) * H;
     let best = null, bestD = 22;
     for (const lamp of geo.lamps) {
