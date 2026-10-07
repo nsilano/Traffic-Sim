@@ -1,0 +1,95 @@
+# Builds the iOS app on a cloud Mac and uploads it to TestFlight.
+# It stays idle until these repository secrets exist (Settings → Secrets and variables → Actions):
+#   APPLE_TEAM_ID (or TEAM_ID)   10-character Team ID (developer.apple.com → Membership)
+#   ASC_KEY_ID                   App Store Connect API key ID
+#   ASC_ISSUER_ID                App Store Connect API issuer ID
+#   ASC_KEY_P8 (or ASC_KEY)      contents of the downloaded AuthKey_XXXX.p8 file
+name: TestFlight
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, claude/beautiful-meitner-aj6kfk]   # claude/beautiful-meitner-aj6kfk is this repo's default branch
+    paths: ['index.html', 'style.css', 'game.js', 'ios/**', '.github/workflows/testflight.yml']
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      TEAM: ${{ secrets.APPLE_TEAM_ID || secrets.TEAM_ID }}
+      KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - name: Check Apple credentials
+        id: creds
+        env:
+          P8: ${{ secrets.ASC_KEY_P8 || secrets.ASC_KEY }}
+        run: |
+          if [ -n "$TEAM" ] && [ -n "$KEY_ID" ] && [ -n "$ISSUER" ] && [ -n "$P8" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Apple secrets not set yet, skipping the TestFlight build."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.creds.outputs.ready == 'true'
+
+      - name: Use Xcode 26 or newer (Apple requires the iOS 26 SDK)
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          XC=$(ls -d /Applications/Xcode_2[6-9]*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          if [ -z "$XC" ]; then echo "::error title=Xcode::No Xcode 26 found on this runner"; ls -d /Applications/Xcode*; exit 1; fi
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+
+      - name: Prepare the game and the Xcode project
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          brew install xcodegen
+          python3 ios/build-game.py
+          cd ios && xcodegen generate
+
+      - name: Install the API key
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          P8: ${{ secrets.ASC_KEY_P8 || secrets.ASC_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$P8" > "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+
+      - name: Archive
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project ios/TrafficSim.xcodeproj -scheme TrafficSim -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/TrafficSim.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8" \
+            -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER" 2>&1 | tee "$RUNNER_TEMP/archive.log" \
+          || { grep -iE 'error|failed' "$RUNNER_TEMP/archive.log" | tail -15 | while IFS= read -r l; do echo "::error title=Archive::$l"; done; exit 1; }
+
+      - name: Upload to TestFlight
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict></plist>
+          PLIST
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/TrafficSim.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8" \
+            -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER" 2>&1 | tee "$RUNNER_TEMP/export.log" \
+            || { grep -iE 'error|failed|permission|certificate|profile' "$RUNNER_TEMP/export.log" | tail -15 | while IFS= read -r l; do echo "::error title=Upload::$l"; done; exit 1; }

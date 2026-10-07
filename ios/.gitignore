@@ -1,0 +1,4 @@
+# generated: python3 build-game.py && xcodegen generate
+TrafficSim/game/
+TrafficSim/Info.plist
+TrafficSim.xcodeproj/

@@ -1,0 +1,49 @@
+# XcodeGen spec: `xcodegen generate` turns this into TrafficSim.xcodeproj (done automatically in CI)
+name: TrafficSim
+options:
+  bundleIdPrefix: com.nicsilano
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  TrafficSim:
+    type: application
+    platform: iOS
+    preBuildScripts:
+      # every Xcode build copies the latest game in, so a local build never ships a stale game
+      - name: Copy the game in
+        script: python3 "$SRCROOT/build-game.py"
+        basedOnDependencyAnalysis: false
+    sources:
+      - path: TrafficSim
+        excludes: ["game/**", "Info.plist"]
+      - path: TrafficSim/game
+        type: folder
+        buildPhase: resources
+    info:
+      path: TrafficSim/Info.plist
+      properties:
+        CFBundleDisplayName: Traffic Simulator
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen:
+          UIColorName: LaunchBG
+        UIRequiresFullScreen: true
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nicsilano.trafficsim
+        PRODUCT_NAME: TrafficSim
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO   # the pre-build step writes the game into the app folder
