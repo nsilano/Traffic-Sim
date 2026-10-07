@@ -1415,9 +1415,11 @@
     let top = parseFloat(getComputedStyle(probe).paddingTop) || 0;
     let bottom = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
     probe.remove();
+    // The iPhone app (html.native) always runs full screen under the status bar.
+    const native = document.documentElement.classList.contains('native');
     const phone = matchMedia('(pointer: coarse)').matches && window.innerWidth < 600;
-    const fullScreen = Math.abs(screen.height - window.innerHeight) < 40 && window.innerHeight > window.innerWidth;
-    if (phone && fullScreen) {
+    const fullScreen = native || (Math.abs(screen.height - window.innerHeight) < 40 && window.innerHeight > window.innerWidth);
+    if ((native || phone) && fullScreen && window.innerHeight > window.innerWidth) {
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       if (!top) top = ios ? 54 : 28;
       if (!bottom && ios) bottom = 20;

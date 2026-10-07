@@ -33,7 +33,7 @@ targets:
         UILaunchScreen:
           UIColorName: LaunchBG
         UIRequiresFullScreen: true
-        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIStatusBarStyle: UIStatusBarStyleDarkContent   # dark clock and battery on the yellow readout and menu
         UIViewControllerBasedStatusBarAppearance: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
