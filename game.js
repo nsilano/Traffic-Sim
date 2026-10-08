@@ -1,4 +1,4 @@
-// Intersection Control — run the signals at a city intersection.
+// Gridlock — run the signals at a city intersection.
 // Each level defines the lanes on both streets and the signal groups the
 // player controls. Signals do not protect the player: giving green to two
 // conflicting groups lets cars drive into each other.
@@ -2891,8 +2891,11 @@
       m.groups[ped.cw.group] = (m.groups[ped.cw.group] || 0) + 1;
       m.oldest = Math.max(m.oldest, ped.wait);
     }
-    // The busiest marker only moves when another corner is clearly busier
-    // for a second, so it doesn't hop between near-ties.
+    // The busiest marker is calm on purpose, so the player has time to work
+    // through a corner before it moves: once placed it stays at least 8
+    // seconds, never leaves a corner that has a green (the player is on it),
+    // and only moves when another corner has been clearly busier (40% more,
+    // plus two) for 3 seconds straight. It does leave a corner that empties.
     const weight = k => (by[k].total > 0 ? by[k].total + by[k].oldest * 0.25 : 0);
     let leader = null, top = 0;
     for (const head of ui.heads) {
@@ -2900,10 +2903,13 @@
       if (w > top) { top = w; leader = head.dataset.dir; }
     }
     const cur = ui.busiest && weight(ui.busiest) > 0 ? ui.busiest : null;
-    if (!cur) { ui.busiest = leader; ui.challenger = null; }
-    else if (leader !== cur && top > weight(cur) * 1.15 + 1) {
+    const served = k => ui.signalButtons.some(b => b.dataset.dir === k && state.groups[Number(b.dataset.group)]?.state === 'green');
+    if (!cur) {
+      if (leader !== ui.busiest) ui.busiestAt = state.t;
+      ui.busiest = leader; ui.challenger = null;
+    } else if (leader !== cur && top > weight(cur) * 1.4 + 2 && state.t - (ui.busiestAt ?? -Infinity) >= 8 && !served(cur)) {
       if (ui.challenger !== leader) { ui.challenger = leader; ui.challengerAt = state.t; }
-      else if (state.t - ui.challengerAt >= 1) { ui.busiest = leader; ui.challenger = null; }
+      else if (state.t - ui.challengerAt >= 3) { ui.busiest = leader; ui.busiestAt = state.t; ui.challenger = null; }
     } else ui.challenger = null;
     const busiest = ui.heads.find(h => h.dataset.dir === ui.busiest) || null;
     const angry = state.level.angry;

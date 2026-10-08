@@ -1,4 +1,4 @@
-# Traffic Simulator for iPhone and iPad
+# Gridlock for iPhone and iPad
 
 A small native app that runs the game full screen and offline. The game itself is still
 `index.html`, `style.css` and `game.js` at the root of the repo; the app bundles a copy of them with the fonts.

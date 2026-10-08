@@ -1,4 +1,4 @@
-# Intersection Control
+# Gridlock
 
 A browser game where you run the traffic signals at a city intersection. Open `index.html` in a browser; there is no build step.
 
@@ -12,7 +12,7 @@ Every shift and freeplay run starts on empty streets that fill up over the first
 
 In a shift, a band at the top shows the score, combo, cars cleared, crashes, time and city patience. The signal buttons sit on the map itself, in a set per direction of traffic placed on the corner right beside that queue. Each button turns its signal green, or sends a green one through yellow to red. Arrows show where those cars go; walking-figure buttons are Walk signals. Number keys <kbd>1</kbd>–<kbd>9</kbd> and <kbd>0</kbd> (number row or keypad) work the buttons too, and tapping a lamp at a stop line does the same.
 
-Each set is also a **monitor**: its label shows how many cars and people are waiting there (including cars backed up off the map) and the longest wait in seconds, turning amber and then red as drivers near the end of their patience. The busiest direction gets a steady yellow outline and a **★ Busiest** tag (it only moves once another corner has been clearly busier for a moment), and each button shows how many are waiting for that signal.
+Each set is also a **monitor**: its label shows how many cars and people are waiting there (including cars backed up off the map) and the longest wait in seconds, turning amber and then red as drivers near the end of their patience. The busiest direction gets a steady yellow outline and a **★ Busiest** tag (it's calm on purpose so you can work through that corner: it stays at least 8 seconds, never moves off a corner you've given a green, and only moves once another corner has been clearly busier for 3 seconds), and each button shows how many are waiting for that signal.
 
 The signals don't protect you. If two conflicting groups are green, or you turn one green while the other's cars are still clearing the box, cars crash. A red **!** on a button means turning it green right now would cross moving traffic.
 
