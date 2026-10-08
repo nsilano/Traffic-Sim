@@ -23,7 +23,9 @@ struct GameView: UIViewRepresentable {
         web.scrollView.bounces = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.allowsBackForwardNavigationGestures = false
+        #if DEBUG
         if #available(iOS 16.4, *) { web.isInspectable = true }
+        #endif
 
         if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "game") {
             web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())

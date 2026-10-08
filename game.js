@@ -1615,6 +1615,7 @@
 
   // ---- Rendering ----
   let scale = 1;
+  let drawnIdle = null; // the state last drawn while nothing moves (paused, won, lost, intro)
   const background = document.createElement('canvas');
   const overlay = document.createElement('canvas');   // decor drawn over traffic
   const darkness = document.createElement('canvas');  // night lighting
@@ -1754,6 +1755,7 @@
     if (!rect.width || !rect.height) return;
     canvas.width = Math.round(rect.width * dpr);
     canvas.height = Math.round(rect.height * dpr);
+    drawnIdle = null; // resizing clears the canvas
     scale = canvas.height / H;
     view.w = Math.min(W, (W * rect.width) / rect.height);
     view.x0 = CX - view.w / 2;
@@ -3556,11 +3558,16 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    requestAnimationFrame(frame);
+    if (ui.game.hidden) return; // the menu covers the board: draw nothing
     if (state.mode === 'running') step(dt, false);
     else if (state.mode !== 'paused') updateEffects(dt);
+    // Save battery: once nothing on the board is moving, stop redrawing it.
+    const still = state.mode !== 'running' && (state.mode === 'paused' || !state.wrecks.length && !state.particles.length && !state.popups.length && !state.banners.length && !(state.shake > 0));
+    if (still && drawnIdle === state) return;
+    drawnIdle = still ? state : null;
     render();
     updateHud();
-    requestAnimationFrame(frame);
   }
 
   const startAt = Math.min(progress.unlocked, LEVELS.length) - 1;

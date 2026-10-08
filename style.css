@@ -154,15 +154,16 @@ kbd {
   background-position: 4px 6px;
 }
 .bldg.dark { background: #0f0c22; }
-.street { position: relative; flex: none; height: 28px; background: var(--ground); }
+.street { position: relative; flex: none; height: 28px; background: var(--ground); container-type: inline-size; }
 .menu-ground { position: relative; z-index: 1; background: var(--ground); padding: 4px 22px calc(var(--safe-bottom) + 12px); }
 .menu-ground .menu-list { max-width: 476px; margin: 0 auto; }
 .lane-line { position: absolute; left: 0; right: 0; top: 11px; height: 4px; background: repeating-linear-gradient(90deg, var(--yellow) 0 18px, transparent 18px 32px); }
-.menu-car { position: absolute; width: 30px; height: 12px; }
+.menu-car { position: absolute; left: 0; width: 30px; height: 12px; will-change: transform; }
 .menu-car.east { top: 16px; background: var(--stop); box-shadow: 0 3px 0 #8a1822, 30px 0 14px rgba(255, 245, 200, 0.5); animation: drive-east 7s linear infinite; }
 .menu-car.west { top: -2px; background: var(--cyan); box-shadow: 0 3px 0 #1b6f80, -30px 0 14px rgba(255, 245, 200, 0.5); animation: drive-west 9s linear infinite 2s; }
-@keyframes drive-east { from { left: -60px; } to { left: calc(100% + 60px); } }
-@keyframes drive-west { from { left: calc(100% + 60px); } to { left: -60px; } }
+/* transform, not left, so the cars don't make the page lay out every frame */
+@keyframes drive-east { from { transform: translateX(-60px); } to { transform: translateX(calc(100cqw + 60px)); } }
+@keyframes drive-west { from { transform: translateX(calc(100cqw + 60px)); } to { transform: translateX(-60px); } }
 
 .menu-inner {
   position: relative;
