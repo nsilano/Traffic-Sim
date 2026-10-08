@@ -469,6 +469,15 @@
   }
   const progress = loadProgress();
 
+  // Version and build, top left of the main menu. The iPhone app's build
+  // stamps both onto <html> (ios/build-game.py); the web page shows the
+  // version alone.
+  const GAME_VERSION = '1.0';
+  (() => {
+    const { version = GAME_VERSION, build } = document.documentElement.dataset;
+    el('menu-version').textContent = build ? `v${version} · build ${build}` : `v${version} · web`;
+  })();
+
   // ---- Game state ----
   let state;
   let geo;
@@ -1886,17 +1895,23 @@
   const OVERPASS_Y = 512, OVERPASS_H = 46;
   const underOverpass = (x, y) => hasDecor('overpass') && y > OVERPASS_Y && y < OVERPASS_Y + OVERPASS_H;
   // Cars on the overpass: purely scenery, timed from the clock.
+  // Each lane moves at one steady speed with uneven gaps between cars, so
+  // nobody on the bridge ever drives through the car in front.
+  const OVERPASS_LANES = [
+    { east: true, speed: 84, offsets: [0, 150, 330, 455, 640] },
+    { east: false, speed: 74, offsets: [60, 250, 370, 560, 700] },
+  ];
+  const OVERPASS_SPAN = W + 160;
   function overpassCars() {
     const t = performance.now() / 1000;
     const cars = [];
-    for (let i = 0; i < 6; i++) {
-      const east = i % 2 === 0;
-      const speed = 70 + (i * 13) % 40;
-      const span = W + 80;
-      let x = ((t * speed + i * 137) % span) - 40;
-      if (!east) x = W - x;
-      cars.push({ x, y: OVERPASS_Y + (east ? OVERPASS_H * 0.72 : OVERPASS_H * 0.28), angle: east ? 0 : Math.PI, color: CAR_COLORS[(i * 3) % CAR_COLORS.length] });
-    }
+    OVERPASS_LANES.forEach((lane, li) => {
+      lane.offsets.forEach((off, i) => {
+        let x = ((t * lane.speed + off) % OVERPASS_SPAN) - 80;
+        if (!lane.east) x = W - x;
+        cars.push({ x, y: OVERPASS_Y + (lane.east ? OVERPASS_H * 0.72 : OVERPASS_H * 0.28), angle: lane.east ? 0 : Math.PI, color: CAR_COLORS[(li * 5 + i * 3) % CAR_COLORS.length] });
+      });
+    });
     return cars;
   }
 
@@ -2337,6 +2352,17 @@
     g.restore();
   }
 
+  // Is this approach lane shared by more than one movement (say straight
+  // and right)? Only then does a turn signal tell the player anything.
+  function sharedLane(laneKey) {
+    if (!geo.sharedLanes) {
+      const moves = {};
+      for (const p of geo.paths) (moves[p.laneKey] ||= new Set()).add(p.move);
+      geo.sharedLanes = new Set(Object.keys(moves).filter(k => moves[k].size > 1));
+    }
+    return geo.sharedLanes.has(laneKey);
+  }
+
   // Badges that tell the player what a driver is up to.
   function drawDriverMarks(g, c) {
     const p = c.path;
@@ -2364,20 +2390,25 @@
       }
     }
 
-    // Turn signals: a car that will turn flashes on that side from the moment
-    // it appears until the turn is done, and a car whose lane ends flashes
-    // towards the lane it's merging into.
-    const turnSide = p.move === 'L' && c.s < p.exitStart + 6 ? -1
-      : p.move === 'R' && c.s < p.exitStart + 6 ? 1
+    // Turn signals, only where they tell the player something: a car in a
+    // lane that can go more than one way (straight or turn) signals its turn
+    // as it gets near the line, and a car whose lane ends signals the merge.
+    // Dedicated turn lanes don't need them: the arrows on the road say it.
+    const nearLine = c.s < p.A && p.stopS - c.s < 170;
+    const turnSide = (p.move === 'L' || p.move === 'R') && nearLine && sharedLane(p.laneKey) ? (p.move === 'L' ? -1 : 1)
       : p.merges && c.s > p.exitStart - 30 && c.s < p.mergeAt + 30 ? p.mergeSide : 0;
-    if (turnSide && Math.sin((state.pulse + c.id * 0.37) * 9.5) > -0.1) {
-      for (const f of [1, -1]) {
-        const x = at.x + fwd.x * f * (c.len / 2 - 1.5) + side.x * turnSide * (c.wid / 2 - 0.5);
-        const y = at.y + fwd.y * f * (c.len / 2 - 1.5) + side.y * turnSide * (c.wid / 2 - 0.5);
-        g.fillStyle = 'rgba(255, 170, 40, 0.4)';
-        g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.fill();
-        g.fillStyle = '#ffb22e';
-        g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill();
+    if (turnSide) {
+      // A slow, soft blink.
+      const b = 0.5 + 0.5 * Math.sin((state.pulse + c.id * 0.37) * 6.3);
+      if (b > 0.35) {
+        for (const f of [1, -1]) {
+          const x = at.x + fwd.x * f * (c.len / 2 - 1.5) + side.x * turnSide * (c.wid / 2 - 0.5);
+          const y = at.y + fwd.y * f * (c.len / 2 - 1.5) + side.y * turnSide * (c.wid / 2 - 0.5);
+          g.fillStyle = `rgba(255, 170, 40, ${0.25 * b})`;
+          g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill();
+          g.fillStyle = `rgba(255, 178, 46, ${0.55 + 0.45 * b})`;
+          g.beginPath(); g.arc(x, y, 2.6, 0, Math.PI * 2); g.fill();
+        }
       }
     }
 

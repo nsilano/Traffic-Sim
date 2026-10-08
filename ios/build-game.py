@@ -11,7 +11,11 @@ html = open(os.path.join(root, 'index.html'), encoding='utf-8').read()
 html = re.sub(r'<link rel="preconnect" href="https://fonts\.g[^"]*"[^>]*>\n?', '', html)
 html, n = re.subn(r'<link rel="stylesheet" href="https://fonts\.googleapis\.com[^"]*">', '<link rel="stylesheet" href="fonts/fonts.css">', html)
 assert n == 1, 'Google Fonts link not found in index.html'
-html = html.replace('<html lang="en">', '<html lang="en" class="native">', 1)
+# Xcode passes the build settings to this pre-build step, so the menu can
+# show the same version and build number as TestFlight.
+version = os.environ.get('MARKETING_VERSION', '1.0')
+build = os.environ.get('CURRENT_PROJECT_VERSION', 'dev')
+html = html.replace('<html lang="en">', f'<html lang="en" class="native" data-version="{version}" data-build="{build}">', 1)
 open(os.path.join(dst, 'index.html'), 'w', encoding='utf-8').write(html)
 for f in ('style.css', 'game.js'):
     shutil.copy(os.path.join(root, f), dst)

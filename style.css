@@ -101,6 +101,7 @@ kbd {
 
 .menu-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .menu-title { display: flex; flex-direction: column; gap: 8px; }
+.menu-version { font-family: var(--font-data); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; opacity: 0.6; margin-bottom: -4px; }
 .menu h1 {
   margin: 0;
   font-size: clamp(2.8rem, 13vw, 4.4rem);
