@@ -341,6 +341,15 @@ kbd {
   transition: border-color 0.4s, box-shadow 0.4s;
 }
 .name-short { display: none; }
+/* An emergency vehicle is coming this way: the corner flashes red and blue,
+   and the buttons that give it a green get a white ring. */
+.head[data-emergency="true"] .cluster-buttons { animation: siren 0.5s steps(1) infinite; }
+.head[data-emergency="true"] .cluster-name { background: #ff3b3b; color: #fff; }
+.map-sig[data-emergency="true"] { outline: 3px solid #fff; outline-offset: 2px; }
+@keyframes siren {
+  0% { border-color: #ff3b3b; box-shadow: 0 0 18px rgba(255, 59, 59, 0.8); }
+  50% { border-color: #3b82ff; box-shadow: 0 0 18px rgba(59, 130, 255, 0.8); }
+}
 /* Stacked sets: buttons in a column and short labels, for tall boards. */
 .signals[data-stack="col"] .cluster-buttons { flex-direction: column; }
 .signals[data-stack="col"] .name-long, .signals[data-stack="col"] .head-word, .signals[data-stack="col"] .head-busiest-word { display: none; }
@@ -554,6 +563,7 @@ output { font-family: var(--font-data); font-weight: 700; font-variant-numeric: 
 @media (prefers-reduced-motion: reduce) {
   .bar-fill, .goal-bar span, .map-sig, .menu-lamp { transition: none; }
   #score-box.pop #stat-score, .stars.animate .star[data-on="true"] { animation: none; }
+  .head[data-emergency="true"] .cluster-buttons { animation: none; border-color: #ff3b3b; }
 }
 
 @media (max-width: 400px) {

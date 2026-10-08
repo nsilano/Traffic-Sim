@@ -31,6 +31,12 @@ Every car gets a driver with its own habits:
 - **Yellow-light racers** (10% of drivers) wear an amber lightning bolt and outline from the moment they appear. When their light turns yellow, they speed up to beat it instead of stopping. They count as traffic in the box, so the red **!** still covers them. If one misjudges and can still stop when the light turns red, it gives up and stops.
 - **Mistakes:** some drivers are distracted at green (a … bubble), some stall (hazard lights), and some tailgaters tap the car ahead in the queue ("BUMP", hazard lights on both). These delays never cost patience and never count as crashes.
 
+## Emergency vehicles
+
+From level 3 on (and in freeplay, unless you switch them off), an ambulance, fire engine or police car needs to get straight through every minute or so. A banner announces it a few seconds ahead with where it's coming from ("Ambulance from the south · clear Northbound!"), a flashing red-and-blue marker at the edge of the map shows where it will appear and which way it will drive, and that direction's signal set flashes red and blue with a white ring on the buttons that give it a green.
+
+The vehicle waits at a red light like anyone else, so it's on you: stop the cross traffic and give its lane the green. A ring around it counts down the time you have, which allows for the drive in plus a little for each car already queued ahead of it. Get it across the stop line in time for a **+50** bonus. Hold it up and you lose **120 points** (and 12% patience in a shift), again every 10 seconds it's still waiting. Wrecking it costs the same on top of the crash.
+
 ## Score, combos and stars
 
 - Every car you clear scores 10 points, times your combo. The combo grows by ×0.5 for every 10 cars in a row cleared without anyone starting to honk, up to ×3. A honking driver or pedestrian, or a crash, resets it.

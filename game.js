@@ -489,6 +489,9 @@
       carSeq: 0, cars: [], peds: [], wrecks: [], particles: [], flashes: [],
       spawners, pedSpawners,
       rush: null, nextRush: 25,
+      // Emergency vehicles: from level 3 in a shift, and in freeplay unless switched off.
+      emergencyOn: freeplay ? freeplay.emergency !== false : levelIndex >= 2,
+      emergency: null, nextEmergency: between(EMERGENCY.first),
       shake: 0, pulse: 0,
       failAt: null, failReason: '',
       hover: -1,
@@ -1090,6 +1093,104 @@
   function starsEarned() {
     return [state.cleared >= state.level.goal, state.crashes === 0, state.minPatience >= STAR_PATIENCE];
   }
+  // ---- Emergency vehicles ----
+  // Now and then an ambulance, fire engine or police car needs to get
+  // straight through. The player is told a few seconds ahead which way it's
+  // coming, then has to stop the cross traffic and give its lane a green. It
+  // waits at a red like anyone else. Getting it across the stop line in time
+  // earns a bonus; holding it up costs points (and patience in a shift), and
+  // keeps costing every few seconds while it's stuck.
+  const EMERGENCY = {
+    warn: 5,                 // seconds of warning before it appears
+    grace: 9,                // seconds allowed beyond the drive to the line...
+    perQueued: 1.4,          // ...plus this for each car already in its lane
+    first: [35, 60], every: [55, 95],
+    bonus: 50, penalty: 120, again: 10, patience: 12,
+  };
+  const EMERGENCY_KINDS = [
+    { name: 'Ambulance', color: '#f4f6f8', stripe: '#e5484d', len: 32, wid: 15 },
+    { name: 'Fire engine', color: '#d8322e', stripe: '#f4f6f8', len: 42, wid: 16 },
+    { name: 'Police car', color: '#1b2430', stripe: '#f4f6f8', len: 25, wid: 14 },
+  ];
+  const FROM = { N: 'south', S: 'north', E: 'west', W: 'east' };
+
+  function updateEmergency(tails) {
+    if (!state.emergencyOn) return;
+    const t = state.t, em = state.emergency;
+    if (!em) {
+      if (t < state.nextEmergency) return;
+      const dirs = DIR_KEYS.filter(k => geo.paths.some(p => p.dir === k && p.move === 'T'));
+      if (!dirs.length) return;
+      const k = pick(dirs), type = pick(EMERGENCY_KINDS);
+      state.emergency = { phase: 'warn', dir: k, type, spawnAt: t + EMERGENCY.warn };
+      banner(`${type.name} from the ${FROM[k]} · clear ${DIRS[k].name}!`, '#ff5a5f');
+      return;
+    }
+    if (em.phase === 'warn') {
+      if (t < em.spawnAt) return;
+      // Into the straight-ahead lane with the most room.
+      let best = null, room = -Infinity;
+      for (const p of geo.paths) {
+        if (p.dir !== em.dir || p.move !== 'T') continue;
+        const r = tails[p.laneKey] === undefined ? Infinity : tails[p.laneKey] - MIN_GAP;
+        if (r > room) { room = r; best = p; }
+      }
+      if (room < em.type.len + 4) return; // wait for space at the edge of the map
+      const c = makeCar(best);
+      Object.assign(c, {
+        color: em.type.color, len: em.type.len, wid: em.type.wid, truck: false, emergency: em.type,
+        maxV: 135, accel: 230, gapPref: 6, react: 0.1, habit: null, beater: false, nerve: 1,
+      });
+      c.v = Math.min(c.maxV, Math.sqrt(2 * BRAKE * Math.max(0, room)));
+      tails[best.laneKey] = -c.len;
+      state.cars.push(c);
+      const queued = state.cars.filter(o => o !== c && o.path.laneKey === best.laneKey).length;
+      Object.assign(em, { phase: 'active', car: c, startedAt: t, nextHit: null,
+        due: t + best.stopS / c.maxV + EMERGENCY.grace + queued * EMERGENCY.perQueued });
+      return;
+    }
+    const c = em.car;
+    if (!state.cars.includes(c)) {
+      // Wrecked on the way in: on top of the crash itself.
+      emergencyPenalty(null, `${em.type.name} wrecked`);
+      endEmergency();
+      return;
+    }
+    const at = pointAt(c.path, c.s - c.len / 2);
+    if (c.s > c.path.stopS) {
+      if (t <= em.due) {
+        addPoints(EMERGENCY.bonus, { x: at.x, y: at.y - 16 }, '#30c070');
+        banner(`Clear path for the ${em.type.name.toLowerCase()} · +${EMERGENCY.bonus}`, '#30c070');
+      }
+      endEmergency();
+      return;
+    }
+    if (t >= (em.nextHit ?? em.due)) {
+      em.nextHit = t + EMERGENCY.again;
+      emergencyPenalty({ x: at.x, y: at.y - 16 }, `${em.type.name} held up`);
+    }
+  }
+
+  function emergencyPenalty(at, text) {
+    breakStreak();
+    addPoints(-EMERGENCY.penalty, at, '#ff8a8d');
+    banner(`${text} · −${EMERGENCY.penalty}`, '#ff5a5f');
+    if (hasLimits()) state.patience = Math.max(0, state.patience - EMERGENCY.patience);
+  }
+
+  function endEmergency() {
+    state.emergency = null;
+    state.nextEmergency = state.t + between(EMERGENCY.every);
+  }
+
+  // The straight-ahead signal groups an emergency needs green.
+  const emergencyGroups = em => new Set(geo.paths.filter(p => p.dir === em.dir && p.move === 'T').map(p => p.group));
+  // Still waiting for the player: announced, or on its way to the stop line.
+  const emergencyPending = () => {
+    const em = state.emergency;
+    return em && (em.phase === 'warn' || em.car.s <= em.car.path.stopS) ? em : null;
+  };
+
   const STAR_GOALS = ['Clear the goal', 'No crashes', `Patience never below ${STAR_PATIENCE}%`];
   function starRow(stars, animate) {
     return `<span class="stars${animate ? ' animate' : ''}" aria-label="${stars.filter(Boolean).length} of 3 stars">${
@@ -1417,6 +1518,7 @@
     updateCars(dt);
     updatePeds(dt);
     if (!quiet) {
+      updateEmergency(laneTails());
       detectCrashes();
       detectPedHits();
       updateEffects(dt);
@@ -1836,6 +1938,11 @@
     for (const [x, y] of [[b.x0 - 10, b.y0 - 10], [b.x1 + 10, b.y0 - 10], [b.x0 - 10, b.y1 + 10], [b.x1 + 10, b.y1 + 10]]) glow(x, y, 85, 0.85);
     for (const lamp of geo.lamps) glow(lamp.x, lamp.y, 16, 0.9);
     for (const c of state.cars) {
+      if (!c.emergency) continue;
+      const at = pointAt(c.path, c.s - c.len / 2);
+      if (!underOverpass(at.x, at.y)) glow(at.x, at.y, 46, 0.55 + 0.3 * Math.sin(state.pulse * 16));
+    }
+    for (const c of state.cars) {
       // Aim the beam the way the car body faces, from its front bumper.
       const at = pointAt(c.path, c.s - c.len / 2);
       const fx = at.x + Math.cos(at.angle) * c.len / 2, fy = at.y + Math.sin(at.angle) * c.len / 2;
@@ -2194,6 +2301,17 @@
       g.fillRect(L * 0.1, -Wd / 2 + 2, L * 0.18, Wd - 4);
       g.fillRect(-L * 0.36, -Wd / 2 + 2.5, L * 0.12, Wd - 5);
     }
+    if (c.emergency && !wrecked) {
+      // Side stripe and a roof light bar flashing red and blue.
+      g.fillStyle = c.emergency.stripe;
+      g.fillRect(-L / 2 + 3, -Wd / 2 + 0.5, L - 6, 2.2);
+      g.fillRect(-L / 2 + 3, Wd / 2 - 2.7, L - 6, 2.2);
+      const on = Math.sin(state.pulse * 16) > 0;
+      g.fillStyle = on ? '#ff3b3b' : '#5a1414';
+      g.fillRect(-2.5, -Wd / 2 + 2, 5, Wd / 2 - 2);
+      g.fillStyle = on ? '#1e3a8a' : '#3b82ff';
+      g.fillRect(-2.5, 0, 5, Wd / 2 - 2);
+    }
     if (wrecked) {
       // Crumpled front and scorch.
       g.fillStyle = 'rgba(20, 20, 20, 0.45)';
@@ -2219,6 +2337,24 @@
     const side = { x: -fwd.y, y: fwd.x };
     // Out of sight under the overpass deck.
     if (underOverpass(at.x, at.y)) return;
+
+    // Emergency vehicle: siren rings, and a ring counting down the time the
+    // player has to get it through.
+    if (c.emergency) {
+      const k = (state.pulse * 1.6) % 1;
+      g.strokeStyle = Math.floor(state.pulse * 3.2) % 2 ? `rgba(59, 130, 255, ${1 - k})` : `rgba(255, 59, 59, ${1 - k})`;
+      g.lineWidth = 2;
+      g.beginPath(); g.arc(at.x, at.y, c.len / 2 + 4 + k * 22, 0, Math.PI * 2); g.stroke();
+      const em = emergencyPending();
+      if (em && em.car === c) {
+        const left = Math.max(0, (em.due - state.t) / (em.due - em.startedAt));
+        g.lineWidth = 3;
+        g.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        g.beginPath(); g.arc(at.x, at.y, c.len / 2 + 3, 0, Math.PI * 2); g.stroke();
+        g.strokeStyle = left > 0.4 ? '#f2f6f3' : left > 0 ? '#f2a91f' : '#ff4d4f';
+        g.beginPath(); g.arc(at.x, at.y, c.len / 2 + 3, -Math.PI / 2, -Math.PI / 2 + (left || 1) * Math.PI * 2); g.stroke();
+      }
+    }
 
     // Turn signals: a car that will turn flashes on that side from the moment
     // it appears until the turn is done, and a car whose lane ends flashes
@@ -2358,6 +2494,37 @@
     }
   }
 
+  // Where an announced emergency vehicle will come in: a flashing marker at
+  // the edge of the visible map pointing the way it will drive, with a
+  // countdown until it appears.
+  function drawEmergencyWarning(g) {
+    const em = state.emergency;
+    if (!em || em.phase !== 'warn') return;
+    const k = em.dir, { d, r } = DIRS[k];
+    const u = -(d.x ? view.w / 2 : HALF) + 62, v = geo.legRight(k) / 2;
+    const x = CX + d.x * u + r.x * v, y = CY + d.y * u + r.y * v;
+    const red = Math.floor(state.pulse * 4) % 2 === 0;
+    g.save();
+    g.translate(x, y);
+    g.fillStyle = 'rgba(14, 16, 20, 0.88)';
+    roundRect(g, -33, -27, 66, 54, 10); g.fill();
+    g.strokeStyle = red ? '#ff3b3b' : '#3b82ff'; g.lineWidth = 3;
+    roundRect(g, -33, -27, 66, 54, 10); g.stroke();
+    // Arrow the way it will drive.
+    g.save();
+    g.rotate(Math.atan2(d.y, d.x));
+    g.fillStyle = red ? '#ff3b3b' : '#3b82ff';
+    g.beginPath(); g.moveTo(14, 0); g.lineTo(2, -9); g.lineTo(2, -4); g.lineTo(-12, -4); g.lineTo(-12, 4); g.lineTo(2, 4); g.lineTo(2, 9); g.closePath(); g.fill();
+    g.restore();
+    g.fillStyle = '#f2f6f3';
+    g.font = '800 8px Archivo, system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(em.type.name.toUpperCase(), 0, -17);
+    g.font = '700 9px "IBM Plex Mono", ui-monospace, monospace';
+    g.fillText(`${Math.max(0, Math.ceil(em.spawnAt - state.t))}s`, 0, 18);
+    g.restore();
+  }
+
   function drawBacklog(g) {
     for (const k of DIR_KEYS) {
       const sp = state.spawners[k];
@@ -2412,6 +2579,7 @@
     // Walk signals go over the people and the night so they're always readable.
     drawWalkSignals(ctx);
     drawBacklog(ctx);
+    drawEmergencyWarning(ctx);
     drawStreetSigns(ctx);
     drawScorePopups(ctx);
   }
@@ -2436,7 +2604,8 @@
       const alpha = b.t > 1.4 ? 1 - (b.t - 1.4) / 0.4 : 1;
       g.save();
       g.globalAlpha = Math.max(0, alpha);
-      g.translate(CX, 70);
+      // Over the middle of the junction, where no signal set sits.
+      g.translate(CX, CY);
       g.scale(0.7 + 0.3 * pop, 0.7 + 0.3 * pop);
       g.font = '800 17px Archivo, system-ui, sans-serif';
       const w = g.measureText(b.text).width + 28;
@@ -2626,6 +2795,12 @@
       head.dataset.level = m.oldest > angry ? 'bad' : m.oldest > angry * 0.5 ? 'warn' : 'ok';
       head.dataset.busiest = head === busiest && state.mode === 'running' ? 'true' : 'false';
     }
+    // An emergency waiting on the player: flash its corner and the buttons
+    // that give it a green.
+    const em = emergencyPending();
+    const emGroups = em ? emergencyGroups(em) : null;
+    for (const head of ui.heads) head.dataset.emergency = em && head.dataset.dir === em.dir ? 'true' : 'false';
+    for (const btn of ui.signalButtons) btn.dataset.emergency = emGroups && btn.dataset.dir === em.dir && emGroups.has(Number(btn.dataset.group)) ? 'true' : 'false';
     for (const btn of ui.signalButtons) {
       const n = by[btn.dataset.dir].groups[btn.dataset.group] || 0;
       const badge = btn.querySelector('.count');
@@ -2815,6 +2990,7 @@
         <li>Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal.</li>
         <li>A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Two conflicting greens cause crashes.</li>
         <li>Under each set of buttons: how many are waiting there and the longest wait so far. The busiest corner gets a yellow outline and ★, and the numbers on the buttons count who's waiting for that signal.</li>
+        <li>Sirens! An ambulance, fire engine or police car is announced a few seconds ahead with the direction it's coming from, and its corner flashes red and blue. Stop the cross traffic and give its lane a green before the ring around it runs out, or you lose points and patience.</li>
         <li>Each driver decides for themselves whether to run a yellow, so wait for the <span class="warn-dot">!</span> to clear before switching the cross street.</li>
         <li>Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow. Turning cars wait for people; straight-through traffic on green does not.</li>
         <li>Streets start empty and fill up over the first minute. After that traffic comes in waves: it swells and eases, arrives in bunches, and now and then goes quiet or surges.</li>
@@ -2887,10 +3063,10 @@
     try {
       const f = JSON.parse(localStorage.getItem('intersection-freeplay'));
       if (f && Number.isInteger(f.map) && LEVELS[f.map] && Number.isInteger(f.density) && f.density >= 1 && f.density <= 10) {
-        return { map: f.map, density: f.density, flow: FLOW_STYLES[f.flow] ? f.flow : 'lively', rush: !!f.rush, peds: f.peds !== false, night: !!f.night };
+        return { map: f.map, density: f.density, flow: FLOW_STYLES[f.flow] ? f.flow : 'lively', rush: !!f.rush, peds: f.peds !== false, night: !!f.night, emergency: f.emergency !== false };
       }
     } catch { /* storage unavailable */ }
-    return { map: 2, density: 5, flow: 'lively', rush: true, peds: true, night: false };
+    return { map: 2, density: 5, flow: 'lively', rush: true, peds: true, night: false, emergency: true };
   }
   function saveFreeplaySettings(f) {
     try { localStorage.setItem('intersection-freeplay', JSON.stringify(f)); } catch { /* storage unavailable */ }
@@ -2958,6 +3134,7 @@
       <label class="check"><input type="checkbox" id="fp-rush" ${f.rush ? 'checked' : ''}> Rush-hour surges</label>
       <label class="check"><input type="checkbox" id="fp-peds" ${f.peds ? 'checked' : ''}> Pedestrians</label>
       <label class="check"><input type="checkbox" id="fp-night" ${f.night ? 'checked' : ''}> Night</label>
+      <label class="check"><input type="checkbox" id="fp-emergency" ${f.emergency !== false ? 'checked' : ''}> Emergency vehicles</label>
       <p class="muted">Density sets how busy it gets on average; flow sets how much it swings. Streets start empty and fill up over the first minute. No goal, no patience meter, and crashes never end the game.</p>
       <div class="card-actions">
         <button class="primary" type="button" data-action="freeplay-start">Start freeplay</button>
@@ -2975,6 +3152,7 @@
       rush: ui.card.querySelector('#fp-rush').checked,
       peds: ui.card.querySelector('#fp-peds').checked,
       night: ui.card.querySelector('#fp-night').checked,
+      emergency: ui.card.querySelector('#fp-emergency').checked,
     };
   }
 
@@ -2985,7 +3163,7 @@
   });
   ui.card.addEventListener('change', e => {
     // Preview the chosen settings behind the setup card.
-    if (e.target.name === 'fp-map' || e.target.name === 'fp-flow' || /^fp-(density|rush|peds|night)$/.test(e.target.id)) setupFreeplay(readFreeplayForm(), true);
+    if (e.target.name === 'fp-map' || e.target.name === 'fp-flow' || /^fp-(density|rush|peds|night|emergency)$/.test(e.target.id)) setupFreeplay(readFreeplayForm(), true);
   });
 
   ui.liveDensity.addEventListener('input', () => {
