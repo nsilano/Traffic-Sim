@@ -20,11 +20,15 @@
   const MIN_COMMIT_SPEED = 45;   // slower cars always stop for a yellow
 
   // Driver types: top speed range, acceleration, following gap, reaction time.
+  // turn: how fast they take a corner (times the usual turning speed);
+  // headway: seconds of following distance they keep at speed, on top of
+  // their gap when stopped. Both vary driver to driver, so a line of cars
+  // spreads out and bunches up instead of moving like a train.
   const DRIVERS = {
-    commuter: { maxV: [92, 115], accel: 150, gap: 8, react: [0.25, 0.6] },
-    speeder: { maxV: [128, 150], accel: 215, gap: 5, react: [0.15, 0.35] },
-    cautious: { maxV: [70, 88], accel: 110, gap: 12, react: [0.5, 0.95] },
-    truck: { maxV: [72, 86], accel: 95, gap: 10, react: [0.4, 0.7] },
+    commuter: { maxV: [92, 115], accel: 150, gap: 8, react: [0.25, 0.6], turn: [0.88, 1.12], headway: [0, 0.04] },
+    speeder: { maxV: [128, 150], accel: 215, gap: 5, react: [0.15, 0.35], turn: [1.02, 1.22], headway: [0, 0] },
+    cautious: { maxV: [70, 88], accel: 110, gap: 12, react: [0.5, 0.95], turn: [0.76, 0.95], headway: [0.03, 0.1] },
+    truck: { maxV: [72, 86], accel: 95, gap: 10, react: [0.4, 0.7], turn: [0.74, 0.9], headway: [0.03, 0.08] },
   };
   const BEATER_SHARE = 0.1;      // drivers who speed up to beat a yellow
   const BEATER_BOOST = 1.3;      // their top speed while racing a yellow
@@ -176,7 +180,7 @@
         { label: '3rd Ave', legs: ['E', 'W'] },
       ],
       peds: 0.06,
-      goal: 60, rate: { NS: [0.24, 0.34], EW: [0.18, 0.26] }, left: 0.28, right: 0.12, angry: 16, rush: true,
+      goal: 60, rate: { NS: [0.24, 0.34], EW: [0.18, 0.26] }, left: 0.28, right: 0.12, angry: 18, rush: true,
       intro: '3rd Ave is a divided boulevard with a planted median, so the box is wider and left turns take longer. Northbound and southbound Main St have separate controls. 3rd Ave loses a lane on both sides of the junction, so its traffic merges right after crossing. Rush-hour surges start here.',
       tip: 'Northbound straight with northbound left is safe. Northbound left with southbound straight is not.',
     },
@@ -199,7 +203,7 @@
         { label: 'Broadway', legs: ['E', 'W'] },
       ],
       peds: 0.07,
-      goal: 80, rate: { NS: [0.3, 0.42], EW: [0.22, 0.3] }, left: 0.28, right: 0.12, angry: 16, rush: true,
+      goal: 80, rate: { NS: [0.3, 0.42], EW: [0.22, 0.3] }, left: 0.28, right: 0.12, angry: 18, rush: true,
       intro: 'Every direction and turn has its own signal, people cross on both streets, and northbound Main St drops a lane past the junction. An overpass crosses the bottom of the map, so part of the northbound queue is hidden under it.',
       tip: 'Some combinations across streets are safe too. Watch for the red ! to find the ones that are not.',
     },
@@ -661,7 +665,10 @@
       wid: truck ? 17 : 14,
       color: truck ? pick(TRUCK_COLORS) : pick(CAR_COLORS),
       truck, type,
-      maxV: between(prof.maxV), accel: prof.accel, gapPref: prof.gap, react: between(prof.react),
+      maxV: between(prof.maxV), accel: prof.accel * between([0.85, 1.15]), react: between(prof.react),
+      gapPref: prof.gap * between([0.75, 1.5]), headway: between(prof.headway), turnK: between(prof.turn),
+      // Nobody holds a perfectly steady speed: a slow drift of a few percent.
+      drift: { f: 0.15 + Math.random() * 0.35, ph: Math.random() * Math.PI * 2 },
       beater, racing: false,
       // How readily this driver runs a yellow, 0 (never) to 1.
       nerve: beater ? 1 : between(NERVE[type]),
@@ -745,10 +752,10 @@
     for (const c of state.cars) {
       const p = c.path;
       if (c.racing && c.s > p.exitStart) c.racing = false;
-      let vMax = c.racing ? c.maxV * BEATER_BOOST : c.maxV;
+      let vMax = c.racing ? c.maxV * BEATER_BOOST : c.maxV * (1 + 0.05 * Math.sin(state.t * c.drift.f + c.drift.ph));
 
-      // Slow down for the turn.
-      const tv = TURN_SPEED[p.move];
+      // Slow down for the turn, each driver at their own pace.
+      const tv = TURN_SPEED[p.move] && TURN_SPEED[p.move] * c.turnK;
       // Stay at turning speed until past the crosswalk on the far side.
       if (tv && c.s < p.exitStart + CROSSWALK + c.len) vMax = Math.min(vMax, Math.sqrt(tv * tv + 2 * BRAKE * Math.max(0, p.A - c.s)));
 
@@ -825,7 +832,8 @@
         tailgating = c.willBump && c.v < 45;
         if (tailgating && gap <= 1) { bump(c, lead); continue; }
       }
-      if (!tailgating) vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * Math.max(0, gap - c.gapPref)));
+      // Following distance: their gap when stopped, plus their headway at speed.
+      if (!tailgating) vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * Math.max(0, gap - c.gapPref - c.v * c.headway)));
       // Ease off towards the merge speed rather than braking hard.
       if (mergeCap < vMax) vMax = Math.min(vMax, Math.max(mergeCap, c.v - BRAKE * dt));
 
@@ -1139,7 +1147,7 @@
       const c = makeCar(best);
       Object.assign(c, {
         color: em.type.color, len: em.type.len, wid: em.type.wid, truck: false, emergency: em.type,
-        maxV: 135, accel: 230, gapPref: 6, react: 0.1, habit: null, beater: false, nerve: 1,
+        maxV: 135, accel: 230, gapPref: 6, headway: 0.1, turnK: 1, react: 0.1, habit: null, beater: false, nerve: 1,
       });
       c.v = Math.min(c.maxV, Math.sqrt(2 * BRAKE * Math.max(0, room)));
       tails[best.laneKey] = -c.len;
