@@ -469,12 +469,15 @@
   }
   const progress = loadProgress();
 
-  // Version and build, top left of the main menu. The iPhone app's build
-  // stamps both onto <html> (ios/build-game.py); the web page shows the
-  // version alone.
+  // Version and build, top left of the main menu. Every build stamps them
+  // in: the iPhone app's onto <html> (ios/build-game.py, from Xcode's build
+  // settings), the web page's as window.GAME_BUILD when it's published with
+  // the matching TestFlight build number. Unstamped, it says "Web".
   const GAME_VERSION = '1.0';
   (() => {
-    const { version = GAME_VERSION, build } = document.documentElement.dataset;
+    const data = document.documentElement.dataset;
+    const version = data.version || window.GAME_VERSION || GAME_VERSION;
+    const build = data.build || window.GAME_BUILD;
     el('menu-version').textContent = build ? `${version} · Build ${build}` : `${version} · Web`;
   })();
 
