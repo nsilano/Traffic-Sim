@@ -1640,7 +1640,7 @@
   }
 
   // Same test as the side-by-side layout in style.css.
-  const SIDEWAYS = '(orientation: landscape) and (max-height: 560px), (orientation: landscape) and (pointer: coarse)';
+  const SIDEWAYS = '(orientation: landscape) and (max-height: 760px), (orientation: landscape) and (pointer: coarse)';
   function fitBoard() {
     const wrap = canvas.parentElement, play = wrap.parentElement;
     wrap.style.aspectRatio = ''; wrap.style.maxWidth = '';
@@ -1743,7 +1743,7 @@
     let need = 0;
     for (const head of ui.heads) {
       const room = boardW / 2 - head.offsetWidth - 10;
-      need = Math.max(need, room > 0 ? (Math.abs(head.dataset.wx - CX) * boardW) / room : W);
+      need = Math.max(need, room > 0 ? (Math.abs(head.dataset.wx - CX) * boardW) / room : Infinity);
     }
     return need;
   }
@@ -3176,14 +3176,25 @@
   }
 
   // ---- Screens ----
+  // Cards are modal: what's behind them can't be tabbed to, and closing one
+  // puts focus back where it was.
+  let cardReturn = null;
   function showCard(html) {
+    if (ui.overlay.hidden) cardReturn = document.activeElement;
     ui.card.innerHTML = html;
     ui.overlay.hidden = false;
+    ui.menu.inert = ui.game.inert = true;
     ui.overlay.scrollTop = 0;
-    const primary = ui.card.querySelector('.primary');
-    if (primary) primary.focus({ preventScroll: true });
+    const first = ui.card.querySelector('.primary') || ui.card.querySelector('button:not(:disabled), input');
+    if (first) first.focus({ preventScroll: true });
   }
-  const hideCard = () => { ui.overlay.hidden = true; };
+  const hideCard = () => {
+    ui.overlay.hidden = true;
+    ui.menu.inert = ui.game.inert = false;
+    if (cardReturn?.isConnected && !cardReturn.closest('[hidden]')) cardReturn.focus({ preventScroll: true });
+    if (ui.overlay.contains(document.activeElement)) document.activeElement.blur();
+    cardReturn = null;
+  };
 
   const levelSummary = lvl => lvl.desc;
 
