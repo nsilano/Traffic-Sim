@@ -587,6 +587,21 @@ output { font-family: var(--font-term); font-size: 1.2rem; font-variant-numeric:
 .switch[aria-checked="true"] { background: var(--go); border-color: var(--go); color: #06301a; box-shadow: 0 4px 0 var(--go-deep), 0 0 12px rgba(47, 255, 134, 0.45); }
 .about { text-align: center; font-family: var(--font-pixel); font-size: 0.4rem; line-height: 1.6; color: var(--dim); text-transform: uppercase; }
 
+/* How to play: a key to the marks on the map, drawn like the real ones. */
+.legend { margin: 0; display: grid; gap: 8px; }
+.legend > div { display: grid; grid-template-columns: 6.2rem minmax(0, 1fr); align-items: start; gap: 10px; }
+.legend dt { display: flex; justify-content: center; padding-top: 2px; }
+.legend dd { margin: 0; font-size: 1.1rem; line-height: 1.1; color: var(--text); }
+.legend dd strong { color: var(--yellow); font-weight: normal; }
+.lg-busy, .lg-wait { font-family: var(--font-term); font-size: 1.05rem; line-height: 1; text-transform: uppercase; white-space: nowrap; border-radius: 2px; padding: 2px 5px; }
+.lg-busy { background: var(--yellow); color: var(--shadow); box-shadow: 0 0 10px rgba(255, 210, 63, 0.55); }
+.lg-busy b { font-weight: normal; background: var(--shadow); color: var(--yellow); border-radius: 2px; padding: 0 3px; }
+.lg-wait { background: var(--stop); color: #fff; }
+.lg-count { display: inline-block; min-width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 2px; background: var(--text); color: var(--shadow); font-family: var(--font-term); font-size: 1rem; padding: 0 3px; }
+.lg-siren { display: inline-block; width: 22px; height: 22px; border-radius: 50%; border: 3px solid #ff3b3b; box-shadow: 0 0 0 3px #3b82ff; }
+.legend .warn-dot, .legend .bolt-dot { font-size: 1.1rem; }
+.card .label + .help, .card .label + .legend { margin-top: -4px; }
+
 .warn-dot { display: inline-block; min-width: 1.2em; border-radius: 2px; background: var(--stop); color: #fff; text-align: center; line-height: 1.2em; }
 .bolt-dot { display: inline-block; min-width: 1.2em; border-radius: 2px; background: var(--shadow); border: 1px solid var(--edge); color: var(--yellow); font-size: 0.8em; text-align: center; line-height: 1.3em; }
 .bolt-dot svg { width: 0.7em; height: 0.85em; fill: currentColor; vertical-align: -0.05em; }

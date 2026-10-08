@@ -1090,8 +1090,12 @@
     addPoints(Math.round(CAR_POINTS * state.mult), pointAt(c.path, c.path.len - PAD - 22), '#f2f6f3');
   }
 
-  function breakStreak() {
-    if (state.streak >= COMBO_STEP) banner('Streak lost', '#ff8a8d');
+  // Says why, and marks where, so the player can see what broke it.
+  function breakStreak(why, at) {
+    if (state.streak >= COMBO_STEP) {
+      banner(`Streak lost · ${why}`, '#ff8a8d');
+      if (at) state.popups.push({ x: at.x, y: at.y - 14, text: 'HONK!', color: '#ff8a8d', t: 0, big: false });
+    }
     state.streak = 0;
     state.mult = 1;
   }
@@ -1167,8 +1171,8 @@
   // keeps costing every few seconds while it's stuck.
   const EMERGENCY = {
     warn: 5,                 // seconds of warning before it appears
-    grace: 9,                // seconds allowed beyond the drive to the line...
-    perQueued: 1.4,          // ...plus this for each car already in its lane
+    hold: 8,                 // seconds it can sit stopped at the lights...
+    perQueued: 1.4,          // ...plus this for each car queued ahead of it
     first: [35, 60], every: [55, 95],
     bonus: 50, penalty: 120, again: 10, patience: 12,
   };
@@ -1210,8 +1214,8 @@
       tails[best.laneKey] = -c.len;
       state.cars.push(c);
       const queued = state.cars.filter(o => o !== c && o.path.laneKey === best.laneKey).length;
-      Object.assign(em, { phase: 'active', car: c, startedAt: t, nextHit: null,
-        due: t + best.stopS / c.maxV + EMERGENCY.grace + queued * EMERGENCY.perQueued });
+      // The clock only runs once it's actually stuck at the lights (see below).
+      Object.assign(em, { phase: 'active', car: c, lastT: t, held: 0, limit: null, nextHit: null, penalised: false });
       return;
     }
     const c = em.car;
@@ -1222,22 +1226,34 @@
       return;
     }
     const at = pointAt(c.path, c.s - c.len / 2);
+    const dt = t - em.lastT;
+    em.lastT = t;
     if (c.s > c.path.stopS) {
-      if (t <= em.due) {
+      if (!em.penalised) {
         addPoints(EMERGENCY.bonus, { x: at.x, y: at.y - 16 }, '#30c070');
         banner(`Clear path for the ${em.type.name.toLowerCase()} · +${EMERGENCY.bonus}`, '#30c070');
       }
       endEmergency();
       return;
     }
-    if (t >= (em.nextHit ?? em.due)) {
-      em.nextHit = t + EMERGENCY.again;
+    // Only time spent stopped counts: while traffic ahead of it is moving,
+    // the player is already doing the right thing. The allowance is set when
+    // it first comes to a stop, with extra for every car queued ahead of it.
+    if (c.v > 6) return;
+    if (em.limit === null) {
+      const ahead = state.cars.filter(o => o !== c && o.path.laneKey === c.path.laneKey && o.s > c.s && o.s <= o.path.stopS + 1).length;
+      em.limit = EMERGENCY.hold + ahead * EMERGENCY.perQueued;
+    }
+    em.held += dt;
+    if (em.held >= (em.nextHit ?? em.limit)) {
+      em.nextHit = em.held + EMERGENCY.again;
+      em.penalised = true;
       emergencyPenalty({ x: at.x, y: at.y - 16 }, `${em.type.name} held up`);
     }
   }
 
   function emergencyPenalty(at, text) {
-    breakStreak();
+    breakStreak(text.toLowerCase());
     addPoints(-EMERGENCY.penalty, at, '#ff8a8d');
     banner(`${text} · −${EMERGENCY.penalty}`, '#ff5a5f');
     if (hasLimits()) state.patience = Math.max(0, state.patience - EMERGENCY.patience);
@@ -1482,7 +1498,7 @@
   function registerCrash(note, at, penalty) {
     // Once the shift is already lost, more wrecks are just scenery.
     if (state.failAt !== null) return;
-    breakStreak();
+    breakStreak('crash');
     addPoints(-penalty, at ? { x: at.x, y: at.y - 18 } : null, '#ff8a8d');
     state.shake = reducedMotion || !settings.shake ? 0 : 0.5;
     state.crashes++;
@@ -1546,14 +1562,14 @@
       if ((c.s > p.stopS + 0.5 || c.racing || committed) && c.s - c.len < p.exitStart) grp.busy++;
       if (isAngry(c)) {
         angry++;
-        if (!c.honked) { c.honked = true; breakStreak(); }
+        if (!c.honked) { c.honked = true; breakStreak('a driver waited too long', pointAt(p, c.s - c.len / 2)); }
       }
     }
     for (const ped of state.peds) {
       if (ped.state === 'crossing' && ped.v > ped.cw.road0 - 4 && ped.v < ped.cw.road1 + 4) state.groups[ped.cw.group].busy++;
       if (ped.state === 'waiting' && ped.wait > state.level.angry) {
         angry++;
-        if (!ped.honked) { ped.honked = true; breakStreak(); }
+        if (!ped.honked) { ped.honked = true; breakStreak('someone waited too long to cross'); }
       }
     }
     let blocked = 0;
@@ -2420,16 +2436,17 @@
     // Out of sight under the overpass deck.
     if (underOverpass(at.x, at.y)) return;
 
-    // Emergency vehicle: siren rings, and a ring counting down the time the
-    // player has to get it through.
+    // Emergency vehicle: siren rings, and a ring counting down how long it
+    // can wait stopped at the lights.
     if (c.emergency) {
       const k = (state.pulse * 1.6) % 1;
       g.strokeStyle = Math.floor(state.pulse * 3.2) % 2 ? `rgba(59, 130, 255, ${1 - k})` : `rgba(255, 59, 59, ${1 - k})`;
       g.lineWidth = 2;
       g.beginPath(); g.arc(at.x, at.y, c.len / 2 + 4 + k * 22, 0, Math.PI * 2); g.stroke();
       const em = emergencyPending();
-      if (em && em.car === c) {
-        const left = Math.max(0, (em.due - state.t) / (em.due - em.startedAt));
+      // The ring appears once it's stuck at the lights and runs down only while it's stopped.
+      if (em && em.car === c && em.limit !== null) {
+        const left = Math.max(0, 1 - em.held / em.limit);
         g.lineWidth = 3;
         g.strokeStyle = 'rgba(0, 0, 0, 0.5)';
         g.beginPath(); g.arc(at.x, at.y, c.len / 2 + 3, 0, Math.PI * 2); g.stroke();
@@ -2695,13 +2712,28 @@
       g.translate(CX, CY);
       g.scale(0.7 + 0.3 * pop, 0.7 + 0.3 * pop);
       g.font = '10px "Press Start 2P", monospace';
-      const w = g.measureText(b.text).width + 28;
+      let w = g.measureText(b.text).width + 28;
       g.fillStyle = 'rgba(22, 27, 33, 0.88)';
-      roundRect(g, -w / 2, -16, w, 32, 16); g.fill();
       g.strokeStyle = b.color; g.lineWidth = 2;
-      roundRect(g, -w / 2, -16, w, 32, 16); g.stroke();
-      g.fillStyle = b.color;
-      g.fillText(b.text, 0, 1);
+      const cut = b.text.indexOf(' · ');
+      if (w > view.w - 24 && cut > 0) {
+        // Too wide for the visible map: the reason goes on a second line.
+        const head = b.text.slice(0, cut), rest = b.text.slice(cut + 3);
+        const hw = g.measureText(head).width;
+        g.font = '17px VT323, monospace';
+        w = Math.max(hw, g.measureText(rest).width) + 32;
+        roundRect(g, -w / 2, -24, w, 48, 14); g.fill();
+        roundRect(g, -w / 2, -24, w, 48, 14); g.stroke();
+        g.fillStyle = b.color;
+        g.fillText(rest, 0, 11);
+        g.font = '10px "Press Start 2P", monospace';
+        g.fillText(head, 0, -9);
+      } else {
+        roundRect(g, -w / 2, -16, w, 32, 16); g.fill();
+        roundRect(g, -w / 2, -16, w, 32, 16); g.stroke();
+        g.fillStyle = b.color;
+        g.fillText(b.text, 0, 1);
+      }
       g.restore();
     }
   }
@@ -3100,19 +3132,29 @@
   }
 
   function showHelp() {
+    const bolt = '<svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg>';
     showCard(`
       <p class="eyebrow">How to play</p>
       <h2>Run the signals</h2>
       <ul class="help">
-        <li>The buttons beside each waiting line control those cars. Each one turns a signal green; tap again to send it through yellow to red.</li>
+        <li>The buttons beside each waiting line control those cars. Tap one to turn it green; tap again to send it through yellow to red.</li>
         <li>Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal.</li>
-        <li>A red <span class="warn-dot">!</span> means turning it green now would cross moving traffic. Two conflicting greens cause crashes.</li>
-        <li>Under each set of buttons: how many are waiting there and the longest wait so far. The busiest corner gets a yellow outline and ★, and the numbers on the buttons count who's waiting for that signal.</li>
-        <li>Sirens! An ambulance, fire engine or police car is announced a few seconds ahead with the direction it's coming from, and its corner flashes red and blue. Stop the cross traffic and give its lane a green before the ring around it runs out, or you lose points and patience.</li>
-        <li>Each driver decides for themselves whether to run a yellow, so wait for the <span class="warn-dot">!</span> to clear before switching the cross street.</li>
-        <li>Cars with an amber <span class="bolt-dot" aria-hidden="true"><svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 5-7H5z"/></svg></span> lightning bolt speed up to beat a yellow. Turning cars wait for people; straight-through traffic on green does not.</li>
-        <li>Streets start empty and fill up over the first minute. After that traffic comes in waves: it swells and eases, arrives in bunches, and now and then goes quiet or surges.</li>
-        <li>Clear cars without anyone honking to build a combo up to ×3, and clear a whole queue in one green for a Green Wave bonus.</li>
+        <li>Two conflicting greens cause crashes. Each driver decides for themselves whether to run a yellow, so let the box clear before switching the cross street.</li>
+      </ul>
+      <p class="label">Reading the map</p>
+      <dl class="legend">
+        <div><dt><span class="lg-busy">North ↑ <b>★</b></span></dt><dd><strong>Busiest corner.</strong> Its set of buttons gets a yellow outline and a ★: that's where most people are waiting, so it probably needs a green next.</dd></div>
+        <div><dt><span class="lg-wait">15 · 31s</span></dt><dd>Under each set of buttons: <strong>how many are waiting</strong> there and the <strong>longest wait</strong>. It turns yellow, then red, as drivers lose patience.</dd></div>
+        <div><dt><span class="lg-count">7</span></dt><dd>The number on a button: how many are waiting for <strong>that</strong> signal.</dd></div>
+        <div><dt><span class="warn-dot">!</span></dt><dd><strong>Not safe yet.</strong> Turning it green now would cross moving traffic. Wait for it to clear.</dd></div>
+        <div><dt><span class="bolt-dot" aria-hidden="true">${bolt}</span></dt><dd>A driver speeding up to beat a yellow. Watch for them before you switch.</dd></div>
+        <div><dt><span class="lg-siren"></span></dt><dd><strong>Sirens.</strong> An emergency vehicle is coming; its buttons flash red and blue. Give its lane a green. The ring around it only runs down while it's stopped at a red; let it run out and you lose points.</dd></div>
+      </dl>
+      <p class="label">Score and streaks</p>
+      <ul class="help">
+        <li>Every car through scores points. Clear cars in a row to build a streak and a combo up to ×3; clear a whole queue in one green for a Green Wave bonus.</li>
+        <li>You lose the streak when a driver or someone at a crossing waits too long (they honk), when cars crash, or when an emergency vehicle is held up. The message tells you which.</li>
+        <li>Streets start empty and fill up over the first minute, then traffic comes in waves.</li>
         <li>Keys 1–9 and 0 (number row or keypad) work the buttons in order. <kbd>P</kbd> pauses.</li>
       </ul>
       <div class="card-actions"><button class="primary" type="button" data-action="close">Got it</button></div>`);
