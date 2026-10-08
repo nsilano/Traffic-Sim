@@ -457,8 +457,8 @@
         const best = {};
         for (const [k, v] of Object.entries(p.best || {})) if (Number.isFinite(v) && v >= 0) best[k] = v;
         const stars = {}, scores = {};
-        for (const [k, v] of Object.entries(p.stars || {})) if (Array.isArray(v) && v.length === 3) stars[k] = v.map(Boolean);
-        for (const [k, v] of Object.entries(p.scores || {})) if (Number.isFinite(v) && v >= 0) scores[k] = v;
+        for (const [k, v] of Object.entries(p.stars || {})) if (LEVELS[k] && Array.isArray(v) && v.length === 3) stars[k] = v.map(Boolean);
+        for (const [k, v] of Object.entries(p.scores || {})) if (LEVELS[k] && Number.isFinite(v) && v >= 0) scores[k] = v;
         return { unlocked: Math.min(LEVELS.length, Math.max(1, p.unlocked)), best, stars, scores };
       }
     } catch { /* storage unavailable */ }
@@ -1117,7 +1117,11 @@
   function loadFreeplayBests() {
     try {
       const b = JSON.parse(localStorage.getItem('intersection-freeplay-bests'));
-      if (b && typeof b === 'object') return b;
+      if (b && typeof b === 'object' && !Array.isArray(b)) {
+        const out = {};
+        for (const [k, v] of Object.entries(b)) if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = v;
+        return out;
+      }
     } catch { /* storage unavailable */ }
     return {};
   }
@@ -1497,7 +1501,7 @@
 
   function registerCrash(note, at, penalty) {
     // Once the shift is already lost, more wrecks are just scenery.
-    if (state.failAt !== null) return;
+    if (state.failAt !== null || (hasLimits() && state.cleared >= state.level.goal)) return; // over, or already won this frame
     breakStreak('crash');
     addPoints(-penalty, at ? { x: at.x, y: at.y - 18 } : null, '#ff8a8d');
     state.shake = reducedMotion || !settings.shake ? 0 : 0.5;
@@ -1580,12 +1584,14 @@
     if (!hasLimits()) { state.patience = Math.max(0, state.patience); return; }
 
     if (state.failAt === null) {
+      if (state.cleared >= state.level.goal) {
+        winLevel();
+        return;
+      }
       if (state.patience <= 0) {
         state.patience = 0;
         state.failAt = state.t + 0.3;
         state.failReason = 'Drivers waited too long and the city ran out of patience.';
-      } else if (state.cleared >= state.level.goal) {
-        winLevel();
       }
     }
     if (state.failAt !== null && state.t >= state.failAt) loseLevel();
@@ -3073,7 +3079,7 @@
     const sections = Object.entries(groups).map(([name, rows]) => `
       <div class="settings-group"><p class="label">${name}</p><div class="settings-list">${rows.join('')}</div></div>`).join('');
     const reset = confirming === 'all'
-      ? '<p class="muted">Erase every star, score and unlocked level?</p><div class="card-actions"><button class="danger" type="button" data-action="reset-confirm">Yes, erase all</button><button type="button" data-action="settings">Keep it</button></div>'
+      ? '<p class="muted">Erase every star, score, unlocked level and freeplay best?</p><div class="card-actions"><button class="danger" type="button" data-action="reset-confirm">Yes, erase all</button><button type="button" data-action="settings">Keep it</button></div>'
       : confirming === 'bests'
         ? '<p class="muted">Erase every freeplay best?</p><div class="card-actions"><button class="danger" type="button" data-action="reset-bests-confirm">Yes, erase bests</button><button type="button" data-action="settings">Keep them</button></div>'
         : '<div class="card-actions"><button type="button" data-action="reset-bests">Reset freeplay bests</button><button class="danger" type="button" data-action="reset">Reset all progress</button></div>';
@@ -3090,6 +3096,7 @@
     settings[key] = !settings[key];
     saveSettings();
     applySettings();
+    if (key === 'emergency' && suspended && !suspended.state.freeplay) suspended.state.emergencyOn = suspended.state.levelIndex >= 2 && settings.emergency;
     // Button size changes how the signal sets fit the map.
     if (key === 'bigButtons' && !ui.game.hidden) resize();
     if (key === 'haptics') haptic('go');  // a sample tap when it's switched on
@@ -3444,7 +3451,8 @@
 
   ui.card.addEventListener('click', e => {
     const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
+    // A double tap's second click would land on the card that replaced this one.
+    if (!btn || e.detail > 1) return;
     const action = btn.dataset.action;
     if (action === 'start') startLevel();
     else if (action === 'levels') showLevelSelect();
@@ -3530,7 +3538,9 @@
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.mode === 'running') togglePause();
+    if (document.hidden) saveFreeplayBests();
   });
+  window.addEventListener('pagehide', () => saveFreeplayBests());
   window.addEventListener('resize', resize);
   // The signal sets are sized from their labels' text, so measure again once
   // the pixel fonts have loaded.
@@ -3547,7 +3557,7 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (state.mode === 'running') step(dt, false);
-    else updateEffects(dt);
+    else if (state.mode !== 'paused') updateEffects(dt);
     render();
     updateHud();
     requestAnimationFrame(frame);
