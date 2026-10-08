@@ -40,6 +40,6 @@ seeds and scripted players before it replaces anything.
 | Stage | State |
 |---|---|
 | 0 | done |
-| 1a | built, waiting for its first TestFlight build |
-| 1b–1d | not started |
+| 1a–1c | built; going to TestFlight together (first Swift compile check) |
+| 1d | not started |
 | 2a–2e | not started |

@@ -36,8 +36,8 @@ struct GameView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        // VoiceOver shouldn't reach the page underneath the native menu.
-        uiView.accessibilityElementsHidden = bridge.showMenu
+        // VoiceOver shouldn't reach the page underneath the native menu or a native card.
+        uiView.accessibilityElementsHidden = bridge.showMenu || bridge.card != nil
     }
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {

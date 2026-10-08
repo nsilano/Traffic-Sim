@@ -706,3 +706,5 @@ output { font-family: var(--font-term); font-size: 1.2rem; font-variant-numeric:
 /* iPhone app: the native menu covers this one, so stop it drawing and animating underneath. */
 html[data-native-menu="on"] .menu { visibility: hidden; }
 html[data-native-menu="on"] .menu *, html[data-native-menu="on"] .menu::before, html[data-native-menu="on"] .menu::after { animation: none !important; }
+/* iPhone app: game cards are drawn natively over the board; the page's card stays, invisible. */
+.overlay.native-card { opacity: 0; pointer-events: none; }

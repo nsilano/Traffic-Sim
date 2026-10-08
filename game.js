@@ -3038,6 +3038,7 @@
     nativeQueued = true;
     queueMicrotask(() => {
       nativeQueued = false;
+      const open = nativeOpenNext;
       const onMenu = !ui.menu.hidden && ui.overlay.hidden;
       document.documentElement.dataset.nativeMenu = onMenu ? 'on' : 'off';
       const next = Math.min(progress.unlocked, LEVELS.length) - 1;
@@ -3052,14 +3053,75 @@
           stars: `★ ${totalStars()}/${LEVELS.length * 3}`,
           best: best ? `Hi ${fmtNum(best)}` : '',
           scanlines: settings.scanlines,
+          card: ui.overlay.hidden ? null : nativeCard,
+          open: nativeOpenNext,
+          // Everything the native screens (levels, records, settings, freeplay) show.
+          data: JSON.stringify({
+            levels: LEVELS.map((lvl, i) => ({
+              name: lvl.name, desc: levelSummary(lvl), layout: lvl.layout,
+              locked: i + 1 > progress.unlocked, stars: progress.stars[i] || null, score: Math.round(progress.scores[i] || 0),
+            })),
+            bests: Object.entries(freeplayBests)
+              .filter(([, b]) => b && Number.isFinite(b.score) && b.score > 0)
+              .sort((a, b) => b[1].score - a[1].score).slice(0, 10)
+              .map(([key, b]) => {
+                const [map, density] = key.split('-').map(Number);
+                const flow = FLOW_STYLES[key.split('-')[2]];
+                return { label: `${LEVELS[map] ? LEVELS[map].name : 'Map'} · ${densityName(density)}${flow ? ' · ' + flow.label : ''}`, score: Math.round(b.score), cpm: Number((b.cpm || 0).toFixed(1)) };
+              }),
+            settings: Object.entries(SETTINGS).map(([key, d]) => ({ key, group: d.group, name: d.name, hint: d.hint, on: settings[key] })),
+            freeplay: loadFreeplaySettings(),
+            flows: Object.entries(FLOW_STYLES).map(([key, st]) => ({ key, label: st.label, desc: st.desc })),
+            densityNames: DENSITY_NAMES,
+          }),
         });
       } catch { /* the app went away */ }
+      if (nativeOpenNext === open) nativeOpenNext = null;
     });
   }
+  // Ask the app to open one of its own screens (levels, freeplay) over the menu.
+  let nativeOpenNext = null;
+  function openNative(name) {
+    if (!ui.menu.hidden && !ui.overlay.hidden) hideCard();
+    if (ui.menu.hidden) goToMenu();
+    nativeOpenNext = name;
+    tellNative();
+  }
   window.Gridlock = {
-    command(name) {
-      if (['play', 'freeplay', 'levels', 'records', 'settings', 'help'].includes(name) && !ui.menu.hidden) menuAction(name);
-      else if (name === 'refresh') tellNative();
+    command(name, arg) {
+      if (name === 'refresh') { tellNative(); return; }
+      if (name === 'card') {
+        // A button on a native game card: press the same button on the page's card.
+        const btn = !ui.overlay.hidden && nativeCard && ui.card.querySelector(`button[data-action="${CSS.escape(String(arg))}"]`);
+        if (btn) btn.click();
+        return;
+      }
+      if (ui.menu.hidden) return; // only the menu takes commands
+      if (['play', 'freeplay', 'levels', 'records', 'settings', 'help'].includes(name)) menuAction(name);
+      else if (name === 'pick' && Number.isInteger(arg) && LEVELS[arg] && arg + 1 <= progress.unlocked) {
+        suspended = null;
+        showScreen('game');
+        loadLevel(arg);
+      } else if (name === 'freeplay-start' && arg && LEVELS[arg.map]) {
+        const f = {
+          map: arg.map, density: Math.min(10, Math.max(1, Math.round(arg.density) || 5)),
+          flow: FLOW_STYLES[arg.flow] ? arg.flow : 'lively',
+          rush: !!arg.rush, peds: !!arg.peds, night: !!arg.night, emergency: !!arg.emergency,
+        };
+        saveFreeplaySettings(f);
+        suspended = null;
+        showScreen('game');
+        setupFreeplay(f, false);
+      } else if (name === 'setting' && SETTINGS[arg]) {
+        toggleSetting(arg, false);
+        tellNative();
+      } else if (name === 'reset-bests') {
+        resetBests(false);
+        tellNative();
+      } else if (name === 'reset-all') {
+        resetProgress(false);
+        tellNative();
+      }
     },
   };
 
@@ -3137,7 +3199,7 @@
       <div class="card-actions"><button class="primary" type="button" data-action="close">Done</button></div>`);
   }
 
-  function toggleSetting(key) {
+  function toggleSetting(key, inCard = true) {
     settings[key] = !settings[key];
     saveSettings();
     applySettings();
@@ -3145,25 +3207,27 @@
     // Button size changes how the signal sets fit the map.
     if (key === 'bigButtons' && !ui.game.hidden) resize();
     if (key === 'haptics') haptic('go');  // a sample tap when it's switched on
+    if (!inCard) return;
     const top = ui.overlay.scrollTop;
     showSettings();
     ui.overlay.scrollTop = top;
     ui.card.querySelector(`[data-key="${key}"]`)?.focus({ preventScroll: true });
   }
 
-  function resetBests() {
+  function resetBests(inCard = true) {
     for (const k of Object.keys(freeplayBests)) delete freeplayBests[k];
     bestsDirty = true; saveFreeplayBests();
-    showSettings();
+    if (inCard) showSettings();
   }
 
-  function resetProgress() {
+  function resetProgress(inCard = true) {
     progress.unlocked = 1; progress.best = {}; progress.stars = {}; progress.scores = {};
     saveProgress();
     for (const k of Object.keys(freeplayBests)) delete freeplayBests[k];
     bestsDirty = true; saveFreeplayBests();
     suspended = null;
     updateMenu();
+    if (!inCard) return;
     showCard('<p class="eyebrow">Settings</p><h2>Progress erased</h2><p class="muted">Every level but the first is locked again.</p><div class="card-actions"><button class="primary" type="button" data-action="close">Done</button></div>');
   }
 
@@ -3222,8 +3286,14 @@
   // Cards are modal: what's behind them can't be tabbed to, and closing one
   // puts focus back where it was.
   let cardReturn = null;
-  function showCard(html) {
+  // In the app, game cards (intro, pause, results) are drawn natively from this
+  // description; the page's own card stays underneath, invisible, and the app
+  // presses its buttons. Other cards are only ever shown in a browser.
+  let nativeCard = null;
+  function showCard(html, card = null) {
     if (ui.overlay.hidden) cardReturn = document.activeElement;
+    nativeCard = nativeBridge ? card : null;
+    ui.overlay.classList.toggle('native-card', !!nativeCard);
     ui.card.innerHTML = html;
     ui.overlay.hidden = false;
     ui.menu.inert = ui.game.inert = true;
@@ -3234,6 +3304,8 @@
   }
   const hideCard = () => {
     ui.overlay.hidden = true;
+    nativeCard = null;
+    ui.overlay.classList.remove('native-card');
     ui.menu.inert = ui.game.inert = false;
     if (cardReturn?.isConnected && !cardReturn.closest('[hidden]')) cardReturn.focus({ preventScroll: true });
     if (ui.overlay.contains(document.activeElement)) document.activeElement.blur();
@@ -3263,6 +3335,7 @@
   const backButton = () => (suspended ? '<button type="button" data-action="back">Back to shift</button>' : '');
 
   function showLevelSelect() {
+    if (nativeBridge) { openNative('levels'); return; }
     suspendCurrent();
     const rows = LEVELS.map((lvl, i) => {
       const locked = i + 1 > progress.unlocked;
@@ -3338,6 +3411,7 @@
   const mapSummary = lvl => lvl.layout; // the road itself, not the campaign shift
 
   function showFreeplaySetup() {
+    if (nativeBridge) { openNative('freeplay'); return; }
     const f = state.freeplay ? { ...state.freeplay } : loadFreeplaySettings();
     suspendCurrent();
     setupFreeplay(f, true);
@@ -3432,7 +3506,12 @@
       <div class="card-actions">
         <button class="primary" type="button" data-action="start">Start shift</button>
         <button type="button" data-action="levels">All levels</button>
-      </div>`);
+      </div>`, {
+      eyebrow: `Level ${state.levelIndex + 1} · ${lvl.street}`, title: lvl.name,
+      lines: [lvl.intro, lvl.tip, `Clear ${lvl.goal} cars. ${MAX_CRASHES} crashes or an empty patience meter ends the shift.`],
+      goals: STAR_GOALS.map((g, j) => ({ text: g, on: !!progress.stars[state.levelIndex]?.[j] })),
+      actions: [{ id: 'start', label: 'Start shift', primary: true }, { id: 'levels', label: 'All levels' }],
+    });
   }
 
   function startLevel() {
@@ -3469,7 +3548,20 @@
         ${hasNext ? '<button class="primary" type="button" data-action="next">Next level</button>' : ''}
         <button ${hasNext ? '' : 'class="primary"'} type="button" data-action="retry">Replay</button>
         <button type="button" data-action="levels">All levels</button>
-      </div>`);
+      </div>`, {
+      eyebrow: `Level ${i + 1} complete`, title: hasNext ? 'Intersection cleared' : 'You ran every intersection',
+      stars, score: `${fmtNum(state.score)} points`, scoreNote: newBest ? 'New best!' : `Best ${fmtNum(prevScore)}`,
+      goals: STAR_GOALS.map((g, j) => ({ text: g, on: stars[j] })),
+      lines: [
+        `You moved ${state.cleared} cars in ${fmtTime(state.t)} with ${state.crashes} ${state.crashes === 1 ? 'crash' : 'crashes'}.`,
+        statsLine(),
+        hasNext ? `Next: ${LEVELS[i + 1].name}. ${levelSummary(LEVELS[i + 1])}.` : 'Every level is unlocked.',
+      ],
+      actions: [
+        ...(hasNext ? [{ id: 'next', label: 'Next level', primary: true }] : []),
+        { id: 'retry', label: 'Replay', primary: !hasNext }, { id: 'levels', label: 'All levels' },
+      ],
+    });
   }
 
   function loseLevel() {
@@ -3485,7 +3577,19 @@
         <button class="primary" type="button" data-action="retry">Try again</button>
         ${state.freeplay ? '<button type="button" data-action="freeplay-setup">Change settings</button>' : ''}
         <button type="button" data-action="levels">All levels</button>
-      </div>`);
+      </div>`, {
+      eyebrow: `${state.freeplay ? 'Freeplay' : `Level ${state.levelIndex + 1}`} · ${state.level.street}`, title: 'Shift over',
+      lines: [
+        state.failReason,
+        `${state.freeplay ? `You cleared ${state.cleared} cars` : `You cleared ${state.cleared} of ${state.level.goal} cars`} in ${fmtTime(state.t)}, scoring ${fmtNum(state.score)} points.`,
+        statsLine(),
+      ],
+      actions: [
+        { id: 'retry', label: 'Try again', primary: true },
+        ...(state.freeplay ? [{ id: 'freeplay-setup', label: 'Change settings' }] : []),
+        { id: 'levels', label: 'All levels' },
+      ],
+    });
   }
 
   function togglePause() {
@@ -3500,7 +3604,16 @@
           <button type="button" data-action="retry">${state.freeplay ? 'Restart' : 'Restart level'}</button>
           <button type="button" data-action="levels">All levels</button>
           <button type="button" data-action="menu">Main menu</button>
-        </div>`);
+        </div>`, {
+        eyebrow: state.freeplay ? 'Freeplay' : `Level ${state.levelIndex + 1} · ${state.level.name}`, title: 'Paused',
+        lines: [`Traffic is frozen. ${fmtNum(state.score)} points so far.`, statsLine()],
+        actions: [
+          { id: 'resume', label: 'Resume', primary: true },
+          ...(state.freeplay ? [{ id: 'freeplay-setup', label: 'Change settings' }] : []),
+          { id: 'retry', label: state.freeplay ? 'Restart' : 'Restart level' },
+          { id: 'levels', label: 'All levels' }, { id: 'menu', label: 'Main menu' },
+        ],
+      });
     } else if (state.mode === 'paused') {
       state.mode = 'running';
       hideCard();

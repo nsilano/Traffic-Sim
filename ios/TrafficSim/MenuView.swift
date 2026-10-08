@@ -32,6 +32,8 @@ struct MenuView: View {
     @ObservedObject var bridge: GameBridge
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selected = 0
+    /// The native screen open over the menu, if any: levels, records, settings, help or freeplay.
+    @State private var screen: String?
 
     private struct Item: Identifiable {
         let id: String
@@ -101,9 +103,43 @@ struct MenuView: View {
                     }
                 }
             }
-            if bridge.summary.scanlines {
-                Scanlines().ignoresSafeArea().allowsHitTesting(false)
+            if let screen = screen {
+                page(screen)
+                    .transition(.move(edge: .trailing))
+                    .zIndex(1)
             }
+            if bridge.summary.scanlines {
+                Scanlines().ignoresSafeArea().allowsHitTesting(false).zIndex(2)
+            }
+        }
+        // The game can ask for a screen (All levels or Change settings from a game card).
+        .onAppear { takeOpenRequest() }
+        .onChange(of: bridge.openRequest) { _ in takeOpenRequest() }
+    }
+
+    private func takeOpenRequest() {
+        guard let name = bridge.openRequest else { return }
+        bridge.openRequest = nil
+        screen = name
+    }
+
+    private func open(_ name: String?) {
+        withAnimation(.easeOut(duration: 0.22)) { screen = name }
+    }
+
+    @ViewBuilder
+    private func page(_ name: String) -> some View {
+        switch name {
+        case "levels":
+            LevelsScreen(bridge: bridge, onBack: { open(nil) }, onFreeplay: { open("freeplay") })
+        case "records":
+            RecordsScreen(bridge: bridge, onBack: { open(nil) })
+        case "settings":
+            SettingsScreen(bridge: bridge, version: version, onBack: { open(nil) })
+        case "freeplay":
+            FreeplayScreen(bridge: bridge, onBack: { open(nil) })
+        default:
+            HelpScreen(onBack: { open(nil) })
         }
     }
 
@@ -140,7 +176,11 @@ struct MenuView: View {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     Button {
                         selected = index
-                        bridge.command(item.id)
+                        if item.id == "play" {
+                            bridge.command("play")
+                        } else {
+                            open(item.id)
+                        }
                     } label: {
                         HStack(spacing: 12) {
                             CursorArrow()

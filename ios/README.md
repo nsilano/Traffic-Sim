@@ -30,6 +30,8 @@ edit `CFBundleDisplayName` in `project.yml`.
 | `TrafficSim/GameView.swift` | the web view that runs the bundled game offline |
 | `TrafficSim/GameBridge.swift` | the link between the app and the game: menu choices go in, menu state and haptic taps come out |
 | `TrafficSim/MenuView.swift` | the native Pixel City main menu (SwiftUI) |
+| `TrafficSim/Screens.swift` | native Levels, Records, Settings, Freeplay setup and How to play screens |
+| `TrafficSim/GameCardView.swift` | native level intro, pause and results cards over the live game |
 | `TrafficSim/Fonts/` | Press Start 2P and VT323 as app fonts for the native screens |
 | `TrafficSim/Assets.xcassets` | app icon and launch colour |
 | `fonts/` | Press Start 2P, VT323, Archivo and IBM Plex Mono (SIL Open Font License) so the app works offline |

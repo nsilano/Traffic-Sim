@@ -10,6 +10,10 @@ struct TrafficSimApp: App {
                 // The game runs underneath all the time, so progress and a paused shift are always there.
                 GameView(bridge: bridge)
                     .ignoresSafeArea()
+                if let card = bridge.card, !bridge.showMenu {
+                    GameCardView(bridge: bridge, card: card)
+                        .transition(.opacity)
+                }
                 if bridge.showMenu {
                     MenuView(bridge: bridge)
                         .transition(.opacity)
