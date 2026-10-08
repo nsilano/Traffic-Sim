@@ -354,6 +354,7 @@
       exitKey: exitDir + exitLane,   // lane the car ends up in
       boxKey: exitDir + boxLane,     // lane the car is in right after the box
       merges: !!shift,
+      mergeSide: Math.sign(shift), // +1 moves over to the driver's right, -1 to the left
       mergeS: cum[jEnd] + g.mergeStart,
       // Where a merging car's body starts to cross into the next lane: it has
       // to be in line behind (or clearly ahead of) traffic there by here.
@@ -2096,20 +2097,30 @@
     }
   }
 
+  // Highlight the crosswalk whose button is under the pointer.
+  function drawCrosswalkHover(g) {
+    for (const cw of geo.crosswalks) {
+      if (state.hover !== cw.group) continue;
+      g.save();
+      approachFrame(g, cw.leg);
+      g.fillStyle = 'rgba(242, 169, 31, 0.3)';
+      g.fillRect(cw.uc - CROSSWALK / 2, cw.road0, CROSSWALK, cw.road1 - cw.road0);
+      g.restore();
+    }
+  }
+
+  // Walk / don't walk heads at both ends of each crosswalk: a white walking
+  // figure, or a red hand (flashing while the crossing clears).
   function drawWalkSignals(g) {
     for (const cw of geo.crosswalks) {
       const st = state.groups[cw.group].state;
-      if (state.hover === cw.group) {
-        g.save();
-        approachFrame(g, cw.leg);
-        g.fillStyle = 'rgba(242, 169, 31, 0.3)';
-        g.fillRect(cw.uc - CROSSWALK / 2, cw.road0, CROSSWALK, cw.road1 - cw.road0);
-        g.restore();
-      }
       for (const v of [cw.road0 - 8, cw.road1 + 8]) {
         const at = cwPoint(cw, v, -(CROSSWALK / 2 + 9));
+        if (underOverpass(at.x, at.y)) continue;
         g.fillStyle = '#15181c';
-        roundRect(g, at.x - 6, at.y - 6, 12, 12, 3); g.fill();
+        roundRect(g, at.x - 6.5, at.y - 6.5, 13, 13, 3); g.fill();
+        g.strokeStyle = 'rgba(255, 255, 255, 0.25)'; g.lineWidth = 0.8;
+        roundRect(g, at.x - 6.5, at.y - 6.5, 13, 13, 3); g.stroke();
         if (st === 'green') {
           // Walking figure.
           g.strokeStyle = '#f2f6f3'; g.fillStyle = '#f2f6f3'; g.lineWidth = 1.4;
@@ -2120,9 +2131,11 @@
           g.moveTo(at.x - 2.6, at.y + 0.2); g.lineTo(at.x, at.y - 1.2); g.lineTo(at.x + 2.6, at.y + 0.6);
           g.stroke();
         } else if (st === 'red' || Math.sin(state.pulse * 9) > 0) {
-          // Raised hand.
-          g.fillStyle = '#f08a3c';
-          roundRect(g, at.x - 2.6, at.y - 3, 5.2, 6.2, 1.8); g.fill();
+          // Raised hand, in red.
+          g.fillStyle = 'rgba(229, 72, 77, 0.35)';
+          g.beginPath(); g.arc(at.x, at.y, 6, 0, Math.PI * 2); g.fill();
+          g.fillStyle = '#ff4d52';
+          roundRect(g, at.x - 2.9, at.y - 3.4, 5.8, 6.8, 2); g.fill();
         }
       }
     }
@@ -2206,6 +2219,23 @@
     const side = { x: -fwd.y, y: fwd.x };
     // Out of sight under the overpass deck.
     if (underOverpass(at.x, at.y)) return;
+
+    // Turn signals: a car that will turn flashes on that side from the moment
+    // it appears until the turn is done, and a car whose lane ends flashes
+    // towards the lane it's merging into.
+    const turnSide = p.move === 'L' && c.s < p.exitStart + 6 ? -1
+      : p.move === 'R' && c.s < p.exitStart + 6 ? 1
+      : p.merges && c.s > p.exitStart - 30 && c.s < p.mergeAt + 30 ? p.mergeSide : 0;
+    if (turnSide && Math.sin((state.pulse + c.id * 0.37) * 9.5) > -0.1) {
+      for (const f of [1, -1]) {
+        const x = at.x + fwd.x * f * (c.len / 2 - 1.5) + side.x * turnSide * (c.wid / 2 - 0.5);
+        const y = at.y + fwd.y * f * (c.len / 2 - 1.5) + side.y * turnSide * (c.wid / 2 - 0.5);
+        g.fillStyle = 'rgba(255, 170, 40, 0.4)';
+        g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#ffb22e';
+        g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill();
+      }
+    }
 
     // Yellow-light racer: an amber lightning bolt riding with the car until it clears the box.
     if (c.beater && c.s < p.exitStart + c.len) {
@@ -2359,7 +2389,7 @@
     toView(ctx, sx, sy);
 
     drawLamps(ctx);
-    drawWalkSignals(ctx);
+    drawCrosswalkHover(ctx);
     drawPeds(ctx);
     for (const c of state.cars) {
       const at = pointAt(c.path, c.s - c.len / 2);
@@ -2379,6 +2409,8 @@
     if (state.level.night) drawNight();
     for (const c of state.cars) drawDriverMarks(ctx, c);
     for (const c of state.cars) drawWaitRing(ctx, c);
+    // Walk signals go over the people and the night so they're always readable.
+    drawWalkSignals(ctx);
     drawBacklog(ctx);
     drawStreetSigns(ctx);
     drawScorePopups(ctx);
