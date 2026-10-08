@@ -481,6 +481,7 @@
     colorblind: { group: 'Display', name: 'Colour-blind signals', hint: 'A shape on each light: square red, triangle yellow, circle green', on: false },
     shake: { group: 'Display', name: 'Screen shake', hint: 'The map jolts when cars crash', on: true },
     scanlines: { group: 'Display', name: 'Scanlines', hint: 'Old-TV lines over the menu and cards', on: true },
+    haptics: { group: 'Feel', name: 'Haptics', hint: 'A tap you can feel each time you switch a light (phones)', on: true },
   };
   const settings = (() => {
     const out = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.on]));
@@ -501,6 +502,17 @@
     try { localStorage.setItem('intersection-settings', JSON.stringify(settings)); } catch { /* storage unavailable */ }
   }
   applySettings();
+
+  // A short buzz when the player switches a light. The iPhone app passes it
+  // to the Taptic Engine; elsewhere the browser's vibrate does it, if it can.
+  function haptic(kind) {
+    if (!settings.haptics) return;
+    try {
+      const native = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.haptic;
+      if (native) native.postMessage(kind);
+      else if (navigator.vibrate) navigator.vibrate(kind === 'stop' ? 18 : 10);
+    } catch { /* no haptics here */ }
+  }
 
   // Version and build, top left of the main menu. Every build stamps them
   // in: the iPhone app's onto <html> (ios/build-game.py, from Xcode's build
@@ -565,8 +577,8 @@
     if (state.mode !== 'running' || state.failAt !== null) return;
     const g = state.groups[i];
     if (!g) return;
-    if (g.state === 'green') { greenWave(i); g.state = 'yellow'; g.timer = 0; g.cycle++; }
-    else if (g.state === 'red') { g.state = 'green'; g.passed = 0; }
+    if (g.state === 'green') { greenWave(i); g.state = 'yellow'; g.timer = 0; g.cycle++; haptic('stop'); }
+    else if (g.state === 'red') { g.state = 'green'; g.passed = 0; haptic('go'); }
   }
 
   function updateGroups(dt) {
@@ -2962,8 +2974,8 @@
     cycleMenuLamp(name === 'menu');
   }
 
-  // The menu's signal runs a slow green, amber, red cycle like a real one.
-  const MENU_CYCLE = [['green', 4000], ['amber', 1500], ['red', 3500]];
+  // The menu's signal runs a brisk green, amber, red cycle.
+  const MENU_CYCLE = [['green', 1600], ['amber', 650], ['red', 1400]];
   let menuLampTimer = null;
   function cycleMenuLamp(on, i = 0) {
     clearTimeout(menuLampTimer);
@@ -3042,6 +3054,7 @@
     applySettings();
     // Button size changes how the signal sets fit the map.
     if (key === 'bigButtons' && !ui.game.hidden) resize();
+    if (key === 'haptics') haptic('go');  // a sample tap when it's switched on
     const top = ui.overlay.scrollTop;
     showSettings();
     ui.overlay.scrollTop = top;
@@ -3168,13 +3181,13 @@
     try {
       const f = JSON.parse(localStorage.getItem('intersection-freeplay'));
       if (f && Number.isInteger(f.map) && LEVELS[f.map] && Number.isInteger(f.density) && f.density >= 1 && f.density <= 10) {
-        return { map: f.map, density: f.density, flow: FLOW_STYLES[f.flow] ? f.flow : 'lively', rush: !!f.rush, peds: f.peds !== false, night: !!f.night, emergency: f.emergency !== false };
+        return { map: f.map, density: f.density, flow: FLOW_STYLES[f.flow] ? f.flow : 'lively', rush: !!f.rush, peds: f.peds !== false, night: typeof f.day === 'boolean' ? !f.day : true, emergency: f.emergency !== false };
       }
     } catch { /* storage unavailable */ }
-    return { map: 2, density: 5, flow: 'lively', rush: true, peds: true, night: false, emergency: true };
+    return { map: 2, density: 5, flow: 'lively', rush: true, peds: true, night: true, emergency: true };
   }
   function saveFreeplaySettings(f) {
-    try { localStorage.setItem('intersection-freeplay', JSON.stringify(f)); } catch { /* storage unavailable */ }
+    try { localStorage.setItem('intersection-freeplay', JSON.stringify({ ...f, day: !f.night })); } catch { /* storage unavailable */ }
   }
 
   // Density 5 matches the busiest point of that map's campaign level; above
