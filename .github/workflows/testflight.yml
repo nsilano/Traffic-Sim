@@ -68,15 +68,15 @@ jobs:
 
       - name: Archive
         if: steps.creds.outputs.ready == 'true'
+        # built unsigned: the upload step signs it with Apple's cloud-managed distribution certificate,
+        # so CI never creates a new development certificate (Apple caps how many an account can have)
         run: |
           set -o pipefail
           xcodebuild archive \
             -project ios/TrafficSim.xcodeproj -scheme TrafficSim -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/TrafficSim.xcarchive" \
             DEVELOPMENT_TEAM="$TEAM" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8" \
-            -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER" 2>&1 | tee "$RUNNER_TEMP/archive.log" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/archive.log" \
           || { grep -iE 'error|failed' "$RUNNER_TEMP/archive.log" | tail -15 | while IFS= read -r l; do echo "::error title=Archive::$l"; done; exit 1; }
 
       - name: Upload to TestFlight
