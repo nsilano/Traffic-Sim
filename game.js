@@ -475,7 +475,7 @@
   const GAME_VERSION = '1.0';
   (() => {
     const { version = GAME_VERSION, build } = document.documentElement.dataset;
-    el('menu-version').textContent = build ? `v${version} · build ${build}` : `v${version} · web`;
+    el('menu-version').textContent = build ? `${version} · Build ${build}` : `${version} · Web`;
   })();
 
   // ---- Game state ----

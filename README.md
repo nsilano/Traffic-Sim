@@ -4,7 +4,7 @@ A browser game where you run the traffic signals at a city intersection. Open `i
 
 ## How to play
 
-The game opens on a main menu styled as a traffic signal (the version, and in the iPhone app the build number, sit in its top left corner), which cycles green, amber and red while you're there: the green lamp plays your next shift (or resumes one in progress), amber opens Freeplay, red opens Settings (reset progress). Below it are Levels, Records (stars and best scores) and How to play.
+The game opens on a main menu styled as a traffic signal (the version and, in the iPhone app, the build number sit in its top left corner, e.g. "1.0 · Build 9"), which cycles green, amber and red while you're there: the green lamp plays your next shift (or resumes one in progress), amber opens Freeplay, red opens Settings (reset progress). Below it are Levels, Records (stars and best scores) and How to play.
 
 Every shift and freeplay run starts on empty streets that fill up over the first 45 seconds or so. From then on traffic is never a constant stream: the overall flow swells and eases over a minute or two, cars arrive in bunches as if released by the lights up the road, and every minute or so there's a quiet spell (announced as "Traffic easing off") or, in livelier traffic, a surge ("Wave of traffic coming"). Drivers stuck in a long queue off the map sometimes give up and take another route.
 
