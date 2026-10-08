@@ -227,6 +227,10 @@ struct RecordsScreen: View {
             Text("\(bridge.data.totalStars) of \(bridge.data.levels.count * 3) stars")
                 .font(Pixel.font(12)).foregroundColor(Pixel.yellow)
                 .shadow(color: Pixel.redShadow, radius: 0, x: 2, y: 2)
+            PixelButton(title: "Game Center", color: Pixel.cyan, textColor: Pixel.deep, shade: Color(hex: 0x1B6F80)) {
+                bridge.feedback()
+                GameCenter.shared.showDashboard()
+            }
             PixelSection(title: "Campaign", color: Pixel.cyan) {
                 ForEach(Array(bridge.data.levels.enumerated()), id: \.offset) { i, level in
                     if i > 0 { RowDivider() }

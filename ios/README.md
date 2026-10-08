@@ -32,6 +32,8 @@ edit `CFBundleDisplayName` in `project.yml`.
 | `TrafficSim/MenuView.swift` | the native Pixel City main menu (SwiftUI) |
 | `TrafficSim/Screens.swift` | native Levels, Records, Settings, Freeplay setup and How to play screens |
 | `TrafficSim/GameCardView.swift` | native level intro, pause and results cards over the live game |
+| `TrafficSim/SoundPlayer.swift`, `TrafficSim/Sounds/` | chiptune sound effects; `make-sounds.py` regenerates the WAVs |
+| `TrafficSim/GameCenter.swift` | Game Center sign-in, leaderboards and achievements |
 | `TrafficSim/Fonts/` | Press Start 2P and VT323 as app fonts for the native screens |
 | `TrafficSim/Assets.xcassets` | app icon and launch colour |
 | `fonts/` | Press Start 2P, VT323, Archivo and IBM Plex Mono (SIL Open Font License) so the app works offline |
@@ -39,3 +41,31 @@ edit `CFBundleDisplayName` in `project.yml`.
 | `project.yml` | XcodeGen spec for the Xcode project |
 
 Progress, stars and best scores are kept on the device between launches.
+
+## Game Center
+
+The app signs the player in to Game Center, posts scores and unlocks achievements on its own. For
+that to work, set these up once in App Store Connect (My Apps → the app → **Services → Game Center**;
+add Game Center to the app version too, under the version's **Game Center** section). The IDs must
+match exactly.
+
+**Leaderboards** (Classic, High score first, Integer):
+
+| Leaderboard ID | Name |
+|---|---|
+| `com.nicsilano.gridlock.campaign` | Campaign score (best scores of all levels added up) |
+| `com.nicsilano.gridlock.stars` | Stars |
+| `com.nicsilano.gridlock.freeplay` | Freeplay best |
+
+**Achievements** (100 points between them works well, e.g. 10/20/20/30/20):
+
+| Achievement ID | Name | Earned when |
+|---|---|---|
+| `com.nicsilano.gridlock.first-shift` | First Shift | level 1 is finished |
+| `com.nicsilano.gridlock.perfect-shift` | Perfect Shift | any level gets all three stars |
+| `com.nicsilano.gridlock.every-shift` | Every Intersection | all seven levels are finished |
+| `com.nicsilano.gridlock.all-stars` | Gridlock Legend | all 21 stars |
+| `com.nicsilano.gridlock.freeplay-5000` | Rush Hour Hero | 5,000 points in one freeplay run |
+
+Until they exist, Game Center quietly ignores the reports. TestFlight builds use Game Center's
+sandbox, so test scores don't reach the live leaderboards.

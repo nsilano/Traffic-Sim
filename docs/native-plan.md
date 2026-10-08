@@ -40,6 +40,6 @@ seeds and scripted players before it replaces anything.
 | Stage | State |
 |---|---|
 | 0 | done |
-| 1a–1c | built; going to TestFlight together (first Swift compile check) |
-| 1d | not started |
+| 1a–1c | done (build 16) |
+| 1d | sound and Game Center built; Game Center needs the App Store Connect setup in ios/README.md |
 | 2a–2e | not started |

@@ -38,6 +38,10 @@ targets:
         UIViewControllerBasedStatusBarAppearance: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    entitlements:
+      path: TrafficSim/TrafficSim.entitlements
+      properties:
+        com.apple.developer.game-center: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nicsilano.trafficsim

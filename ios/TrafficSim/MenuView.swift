@@ -124,6 +124,7 @@ struct MenuView: View {
     }
 
     private func open(_ name: String?) {
+        bridge.feedback()
         withAnimation(.easeOut(duration: 0.22)) { screen = name }
     }
 

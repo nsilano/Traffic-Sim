@@ -481,6 +481,7 @@
     colorblind: { group: 'Display', name: 'Colour-blind signals', hint: 'A shape on each light: square red, triangle yellow, circle green', on: false },
     shake: { group: 'Display', name: 'Screen shake', hint: 'The map jolts when cars crash', on: true },
     scanlines: { group: 'Display', name: 'Scanlines', hint: 'Old-TV lines over the menu and cards', on: true },
+    sound: { group: 'Feel', name: 'Sound effects', hint: 'Chiptune blips, crashes and sirens (iPhone app; follows the silent switch)', on: true },
     haptics: { group: 'Feel', name: 'Haptics', hint: 'A tap you can feel each time you switch a light (phones)', on: true },
   };
   const settings = (() => {
@@ -512,6 +513,16 @@
       if (native) native.postMessage(kind);
       else if (navigator.vibrate) navigator.vibrate(kind === 'stop' ? 18 : 10);
     } catch { /* no haptics here */ }
+  }
+
+  // Sound effects play natively in the iPhone app (chiptune WAVs in the app bundle).
+  function sfx(name) {
+    if (!settings.sound) return;
+    if (state && state.mode !== 'running' && name !== 'win' && name !== 'lose') return;
+    try {
+      const native = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.sound;
+      if (native) native.postMessage(name);
+    } catch { /* no sound here */ }
   }
 
   // Version and build, top left of the main menu. Every build stamps them
@@ -577,8 +588,8 @@
     if (state.mode !== 'running' || state.failAt !== null) return;
     const g = state.groups[i];
     if (!g) return;
-    if (g.state === 'green') { greenWave(i); g.state = 'yellow'; g.timer = 0; g.cycle++; haptic('stop'); }
-    else if (g.state === 'red') { g.state = 'green'; g.passed = 0; haptic('go'); }
+    if (g.state === 'green') { greenWave(i); g.state = 'yellow'; g.timer = 0; g.cycle++; haptic('stop'); sfx('stop'); }
+    else if (g.state === 'red') { g.state = 'green'; g.passed = 0; haptic('go'); sfx('go'); }
   }
 
   function updateGroups(dt) {
@@ -1084,7 +1095,7 @@
     state.worstWait = Math.max(state.worstWait, c.wait);
     state.streak++;
     const mult = Math.min(MAX_COMBO, 1 + 0.5 * Math.floor(state.streak / COMBO_STEP));
-    if (mult > state.mult) banner(`${state.streak} in a row · ×${mult}`, '#f2a91f');
+    if (mult > state.mult) { banner(`${state.streak} in a row · ×${mult}`, '#f2a91f'); sfx('combo'); }
     state.mult = mult;
     // Points float up where the car leaves the map.
     addPoints(Math.round(CAR_POINTS * state.mult), pointAt(c.path, c.path.len - PAD - 22), '#f2f6f3');
@@ -1094,6 +1105,7 @@
   function breakStreak(why, at) {
     if (state.streak >= COMBO_STEP) {
       banner(`Streak lost · ${why}`, '#ff8a8d');
+      sfx('streak');
       if (at) state.popups.push({ x: at.x, y: at.y - 14, text: 'HONK!', color: '#ff8a8d', t: 0, big: false });
     }
     state.streak = 0;
@@ -1110,6 +1122,7 @@
     const lamp = geo.lamps.find(l => l.group === i);
     addPoints(bonus, lamp ? { x: lamp.x, y: lamp.y - 12 } : null, '#30c070');
     banner(`Green wave · ${g.passed} cars · +${bonus}`, '#30c070');
+    sfx('wave');
   }
 
   // ---- Personal bests ----
@@ -1197,6 +1210,7 @@
       const k = pick(dirs), type = pick(EMERGENCY_KINDS);
       state.emergency = { phase: 'warn', dir: k, type, spawnAt: t + EMERGENCY.warn };
       banner(`${type.name} from the ${FROM[k]} · clear ${DIRS[k].name}!`, '#ff5a5f');
+      sfx('siren');
       return;
     }
     if (em.phase === 'warn') {
@@ -1236,6 +1250,7 @@
       if (!em.penalised) {
         addPoints(EMERGENCY.bonus, { x: at.x, y: at.y - 16 }, '#30c070');
         banner(`Clear path for the ${em.type.name.toLowerCase()} · +${EMERGENCY.bonus}`, '#30c070');
+        sfx('clear');
       }
       endEmergency();
       return;
@@ -1257,6 +1272,7 @@
   }
 
   function emergencyPenalty(at, text) {
+    sfx('held');
     breakStreak(text.toLowerCase());
     addPoints(-EMERGENCY.penalty, at, '#ff8a8d');
     banner(`${text} · −${EMERGENCY.penalty}`, '#ff5a5f');
@@ -1507,6 +1523,7 @@
   function registerCrash(note, at, penalty) {
     // Once the shift is already lost, more wrecks are just scenery.
     if (state.failAt !== null || (hasLimits() && state.cleared >= state.level.goal)) return; // over, or already won this frame
+    sfx('crash');
     breakStreak('crash');
     addPoints(-penalty, at ? { x: at.x, y: at.y - 18 } : null, '#ff8a8d');
     state.shake = reducedMotion || !settings.shake ? 0 : 0.5;
@@ -3520,6 +3537,7 @@
   }
 
   function winLevel() {
+    sfx('win');
     state.mode = 'won';
     suspended = null;
     const i = state.levelIndex;
@@ -3565,6 +3583,7 @@
   }
 
   function loseLevel() {
+    sfx('lose');
     state.mode = 'lost';
     suspended = null;
     showCard(`

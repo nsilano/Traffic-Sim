@@ -16,6 +16,7 @@ struct GameView: UIViewRepresentable {
         // "haptic": a tap when the player switches a light; "bridge": the menu link (GameBridge)
         config.userContentController.add(bridge, name: "haptic")
         config.userContentController.add(bridge, name: "bridge")
+        config.userContentController.add(bridge, name: "sound")
 
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
@@ -43,5 +44,6 @@ struct GameView: UIViewRepresentable {
     static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "haptic")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "bridge")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "sound")
     }
 }

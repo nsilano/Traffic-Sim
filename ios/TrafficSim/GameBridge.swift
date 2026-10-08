@@ -102,6 +102,10 @@ final class GameBridge: NSObject, ObservableObject, WKScriptMessageHandler {
     private let light = UIImpactFeedbackGenerator(style: .light)
     private let firm = UIImpactFeedbackGenerator(style: .medium)
     private let tick = UISelectionFeedbackGenerator()
+    private let sounds = SoundPlayer()
+
+    /// Settings → Sound effects, as the game last reported it.
+    private var soundOn: Bool { data.settings.first(where: { $0.key == "sound" })?.on ?? true }
 
     /// A command for the game: play, levels, records, settings, help, or with a value:
     /// pick (a level index), freeplay-start (a FreeplayConfig), setting (a key),
@@ -111,8 +115,14 @@ final class GameBridge: NSObject, ObservableObject, WKScriptMessageHandler {
     func command(_ name: String, key: String) { send(name, argument: Self.json(key)) }
     func command(_ name: String, freeplay: FreeplayConfig) { send(name, argument: Self.json(freeplay)) }
 
-    private func send(_ name: String, argument: String) {
+    /// The tick and blip for any native button press.
+    func feedback() {
         tick.selectionChanged()
+        if soundOn { sounds.play("tap") }
+    }
+
+    private func send(_ name: String, argument: String) {
+        feedback()
         let script = "window.Gridlock && window.Gridlock.command(\(Self.json(name)), \(argument))"
         guard ready else { pending.append(script); return }
         run(script)
@@ -129,6 +139,8 @@ final class GameBridge: NSObject, ObservableObject, WKScriptMessageHandler {
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         switch message.name {
+        case "sound":
+            if let name = message.body as? String { sounds.play(name) }
         case "haptic":
             let generator = (message.body as? String) == "stop" ? firm : light
             generator.impactOccurred()
@@ -146,6 +158,7 @@ final class GameBridge: NSObject, ObservableObject, WKScriptMessageHandler {
             if let json = body["data"] as? String, let bytes = json.data(using: .utf8),
                let decoded = try? JSONDecoder().decode(GameData.self, from: bytes), decoded != data {
                 data = decoded
+                GameCenter.shared.report(decoded)
             }
             var newCard: GameCard?
             if let raw = body["card"], !(raw is NSNull),
@@ -162,6 +175,7 @@ final class GameBridge: NSObject, ObservableObject, WKScriptMessageHandler {
             }
             if !ready {
                 ready = true
+                GameCenter.shared.signIn()
                 for script in pending { run(script) }
                 pending.removeAll()
             }
