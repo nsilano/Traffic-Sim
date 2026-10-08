@@ -26,7 +26,11 @@ edit `CFBundleDisplayName` in `project.yml`.
 
 | Path | What it is |
 |---|---|
-| `TrafficSim/TrafficSimApp.swift`, `GameView.swift` | the app: a full-screen web view that loads the bundled game, and plays the game's haptic taps on the Taptic Engine |
+| `TrafficSim/TrafficSimApp.swift` | the app: the game full screen, with the native main menu over it while you're on the menu |
+| `TrafficSim/GameView.swift` | the web view that runs the bundled game offline |
+| `TrafficSim/GameBridge.swift` | the link between the app and the game: menu choices go in, menu state and haptic taps come out |
+| `TrafficSim/MenuView.swift` | the native Pixel City main menu (SwiftUI) |
+| `TrafficSim/Fonts/` | Press Start 2P and VT323 as app fonts for the native screens |
 | `TrafficSim/Assets.xcassets` | app icon and launch colour |
 | `fonts/` | Press Start 2P, VT323, Archivo and IBM Plex Mono (SIL Open Font License) so the app works offline |
 | `build-game.py` | copies the game into the app and points it at the local fonts |

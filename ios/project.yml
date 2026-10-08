@@ -30,6 +30,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        UIAppFonts: [PressStart2P-Regular.ttf, VT323-Regular.ttf]   # the Pixel City fonts for the native screens
         UILaunchScreen:
           UIColorName: LaunchBG
         UIRequiresFullScreen: true

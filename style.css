@@ -702,3 +702,7 @@ output { font-family: var(--font-term); font-size: 1.2rem; font-variant-numeric:
   .play { padding: 0; }
   .board-wrap { border-radius: 0; box-shadow: none; }
 }
+
+/* iPhone app: the native menu covers this one, so stop it drawing and animating underneath. */
+html[data-native-menu="on"] .menu { visibility: hidden; }
+html[data-native-menu="on"] .menu *, html[data-native-menu="on"] .menu::before, html[data-native-menu="on"] .menu::after { animation: none !important; }

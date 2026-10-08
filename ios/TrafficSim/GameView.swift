@@ -5,7 +5,7 @@ import WebKit
 /// Shows the bundled game (game/index.html) full screen. Everything is offline:
 /// the game files, the fonts and the saved progress all live on the device.
 struct GameView: UIViewRepresentable {
-    func makeCoordinator() -> Haptics { Haptics() }
+    @ObservedObject var bridge: GameBridge
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -13,8 +13,9 @@ struct GameView: UIViewRepresentable {
         config.mediaTypesRequiringUserActionForPlayback = []
         // a persistent store keeps localStorage (levels, stars, best scores) between launches
         config.websiteDataStore = .default()
-        // the game posts "go" or "stop" here when the player switches a light
-        config.userContentController.add(context.coordinator, name: "haptic")
+        // "haptic": a tap when the player switches a light; "bridge": the menu link (GameBridge)
+        config.userContentController.add(bridge, name: "haptic")
+        config.userContentController.add(bridge, name: "bridge")
 
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
@@ -26,6 +27,7 @@ struct GameView: UIViewRepresentable {
         #if DEBUG
         if #available(iOS 16.4, *) { web.isInspectable = true }
         #endif
+        bridge.webView = web
 
         if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "game") {
             web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -33,21 +35,13 @@ struct GameView: UIViewRepresentable {
         return web
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
-
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: Haptics) {
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "haptic")
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        // VoiceOver shouldn't reach the page underneath the native menu.
+        uiView.accessibilityElementsHidden = bridge.showMenu
     }
 
-    /// Plays a light tap for a light turning green and a firmer one for a stop.
-    final class Haptics: NSObject, WKScriptMessageHandler {
-        private let light = UIImpactFeedbackGenerator(style: .light)
-        private let firm = UIImpactFeedbackGenerator(style: .medium)
-
-        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            let generator = (message.body as? String) == "stop" ? firm : light
-            generator.impactOccurred()
-            generator.prepare()
-        }
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "haptic")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "bridge")
     }
 }

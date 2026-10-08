@@ -3022,8 +3022,46 @@
     ui.game.hidden = name !== 'game';
     if (name === 'game') resize();
     else updateMenu();
-    cycleMenuLamp(name === 'menu');
+    cycleMenuLamp(name === 'menu' && !nativeBridge);
+    tellNative();
   }
+
+  // ---- iPhone app bridge ----
+  // In the app the main menu is native (SwiftUI) and sits over this page.
+  // The app sends menu choices in through Gridlock.command(), and the page
+  // tells the app whenever the menu is showing with nothing over it, plus
+  // what the menu should say.
+  const nativeBridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge;
+  let nativeQueued = false;
+  function tellNative() {
+    if (!nativeBridge || nativeQueued) return;
+    nativeQueued = true;
+    queueMicrotask(() => {
+      nativeQueued = false;
+      const onMenu = !ui.menu.hidden && ui.overlay.hidden;
+      document.documentElement.dataset.nativeMenu = onMenu ? 'on' : 'off';
+      const next = Math.min(progress.unlocked, LEVELS.length) - 1;
+      const best = Math.max(0, ...Object.values(progress.scores));
+      try {
+        nativeBridge.postMessage({
+          type: 'screen',
+          menu: onMenu,
+          play: suspended ? 'Resume' : progress.unlocked > 1 || progress.stars[0] ? 'Continue' : 'Play',
+          playNote: suspended ? (suspended.state.freeplay ? 'Freeplay' : LEVELS[suspended.state.levelIndex].name) : LEVELS[next].name,
+          shift: `Signal duty · Shift ${next + 1}`,
+          stars: `★ ${totalStars()}/${LEVELS.length * 3}`,
+          best: best ? `Hi ${fmtNum(best)}` : '',
+          scanlines: settings.scanlines,
+        });
+      } catch { /* the app went away */ }
+    });
+  }
+  window.Gridlock = {
+    command(name) {
+      if (['play', 'freeplay', 'levels', 'records', 'settings', 'help'].includes(name) && !ui.menu.hidden) menuAction(name);
+      else if (name === 'refresh') tellNative();
+    },
+  };
 
   // The menu's signal runs a brisk green, amber, red cycle.
   const MENU_CYCLE = [['green', 1600], ['amber', 650], ['red', 1400]];
@@ -3192,6 +3230,7 @@
     ui.overlay.scrollTop = 0;
     const first = ui.card.querySelector('.primary') || ui.card.querySelector('button:not(:disabled), input');
     if (first) first.focus({ preventScroll: true });
+    tellNative();
   }
   const hideCard = () => {
     ui.overlay.hidden = true;
@@ -3199,6 +3238,7 @@
     if (cardReturn?.isConnected && !cardReturn.closest('[hidden]')) cardReturn.focus({ preventScroll: true });
     if (ui.overlay.contains(document.activeElement)) document.activeElement.blur();
     cardReturn = null;
+    tellNative();
   };
 
   const levelSummary = lvl => lvl.desc;
