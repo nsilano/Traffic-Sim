@@ -1188,7 +1188,7 @@
   const FROM = { N: 'south', S: 'north', E: 'west', W: 'east' };
 
   function updateEmergency(tails) {
-    if (!state.emergencyOn) return;
+    if (!state.emergencyOn) { state.emergency = null; return; }
     const t = state.t, em = state.emergency;
     if (!em) {
       if (t < state.nextEmergency) return;
@@ -1334,6 +1334,7 @@
           // way for the rest of the crossing, so a driver and a walker can't
           // keep politely waiting on each other.
           if (ped.paused < PED_PATIENCE && !blocker) ped.paused = 0;
+          ped.sideTo = null;
           ped.v += ped.dir * ped.speed * (g.state === 'green' ? 1 : 1.5) * dt;
           ped.phase += dt * 10;
         }
@@ -1395,13 +1396,17 @@
   // A pedestrian blocked by a stopped car walks around its nearer end
   // instead of through it. False when there's no way around close by.
   function sidestep(ped, dt) {
-    let target = null;
+    // Head for the same gap until it closes, or someone between two gaps
+    // flips back and forth every frame and never gets past.
+    let target = ped.sideTo ?? null;
+    if (target !== null && carAhead(ped, target)) target = null;
     for (let k = 3; k <= 30 && target === null; k += 3) {
       for (const du of [ped.du - k, ped.du + k]) {
         if (!carAhead(ped, du)) { target = du; break; }
       }
     }
     if (target === null) return false;
+    ped.sideTo = target;
     const step = ped.speed * dt;
     ped.du += Math.max(-step, Math.min(step, target - ped.du));
     return true;
