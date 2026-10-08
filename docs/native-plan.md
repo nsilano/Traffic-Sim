@@ -7,9 +7,9 @@ Constraint: Xcode can't run in the cloud workspace, so Swift only gets compiled 
 workflow on GitHub (macOS runner). Every stage ends with a push the owner approves, and a build
 that fails is fixed before the next stage starts.
 
-## Stage 0: bug fixes (in progress)
-Four review agents (simulation, UI/layout, game flow/saving, iOS/performance) report bugs; confirmed
-fixes are applied to the current game. They carry over to every later stage.
+## Stage 0: bug fixes (done, builds 14–15)
+Four review agents (simulation, UI/layout, game flow/saving, iOS/performance) found bugs; the
+confirmed fixes are in. Their feedback and feature ideas are kept in `docs/ideas.md`.
 
 ## Stage 1: native app around the game
 The game screen keeps the existing engine (web view, bundled and offline); everything else becomes
@@ -39,6 +39,7 @@ seeds and scripted players before it replaces anything.
 ## Status
 | Stage | State |
 |---|---|
-| 0 | in progress |
-| 1a–1d | not started |
+| 0 | done |
+| 1a | in progress |
+| 1b–1d | not started |
 | 2a–2e | not started |
