@@ -469,6 +469,39 @@
   }
   const progress = loadProgress();
 
+  // ---- Settings ----
+  // Player preferences, kept in this browser. None of them changes how the
+  // traffic itself behaves, except switching emergency vehicles off in shifts.
+  const SETTINGS = {
+    signals: { group: 'Gameplay', name: 'Turn signals', hint: 'Blinkers on cars that could go more than one way', on: true },
+    counts: { group: 'Gameplay', name: 'Waiting counts', hint: 'How many wait at each corner, and for how long', on: true },
+    busiest: { group: 'Gameplay', name: 'Busiest marker', hint: 'Star and outline on the corner that needs you most', on: true },
+    emergency: { group: 'Gameplay', name: 'Emergency vehicles', hint: 'Ambulances, fire engines and police in shifts', on: true },
+    bigButtons: { group: 'Display', name: 'Big buttons', hint: 'Larger signal buttons when the map has room', on: false },
+    colorblind: { group: 'Display', name: 'Colour-blind signals', hint: 'A shape on each light: square red, triangle yellow, circle green', on: false },
+    shake: { group: 'Display', name: 'Screen shake', hint: 'The map jolts when cars crash', on: true },
+    scanlines: { group: 'Display', name: 'Scanlines', hint: 'Old-TV lines over the menu and cards', on: true },
+  };
+  const settings = (() => {
+    const out = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.on]));
+    try {
+      const saved = JSON.parse(localStorage.getItem('intersection-settings'));
+      if (saved && typeof saved === 'object') for (const k of Object.keys(out)) if (typeof saved[k] === 'boolean') out[k] = saved[k];
+    } catch { /* storage unavailable */ }
+    return out;
+  })();
+  function applySettings() {
+    const app = document.querySelector('.app');
+    app.dataset.counts = settings.counts ? 'on' : 'off';
+    app.dataset.busiest = settings.busiest ? 'on' : 'off';
+    app.dataset.colorblind = settings.colorblind ? 'on' : 'off';
+    app.dataset.scanlines = settings.scanlines ? 'on' : 'off';
+  }
+  function saveSettings() {
+    try { localStorage.setItem('intersection-settings', JSON.stringify(settings)); } catch { /* storage unavailable */ }
+  }
+  applySettings();
+
   // Version and build, top left of the main menu. Every build stamps them
   // in: the iPhone app's onto <html> (ios/build-game.py, from Xcode's build
   // settings), the web page's as window.GAME_BUILD when it's published with
@@ -506,7 +539,7 @@
       spawners, pedSpawners,
       rush: null, nextRush: 25,
       // Emergency vehicles: from level 3 in a shift, and in freeplay unless switched off.
-      emergencyOn: freeplay ? freeplay.emergency !== false : levelIndex >= 2,
+      emergencyOn: freeplay ? freeplay.emergency !== false : levelIndex >= 2 && settings.emergency,
       emergency: null, nextEmergency: between(EMERGENCY.first),
       shake: 0, pulse: 0,
       failAt: null, failReason: '',
@@ -1439,7 +1472,7 @@
     if (state.failAt !== null) return;
     breakStreak();
     addPoints(-penalty, at ? { x: at.x, y: at.y - 18 } : null, '#ff8a8d');
-    state.shake = reducedMotion ? 0 : 0.5;
+    state.shake = reducedMotion || !settings.shake ? 0 : 0.5;
     state.crashes++;
     state.patience = Math.max(0, state.patience - CRASH_PATIENCE);
     if (hasLimits() && state.crashes >= MAX_CRASHES && state.failAt === null) {
@@ -1645,7 +1678,7 @@
     if (!boardW || !ui.heads?.length) return;
     const portrait = !matchMedia(SIDEWAYS).matches && aspectView < W;
     let best = null;
-    for (let size = 44; size >= 30 && !best; size -= 2) {
+    for (let size = settings.bigButtons ? 56 : 44; size >= 30 && !best; size -= 2) {
       for (const stack of portrait ? ['row', 'col'] : ['row']) {
         sig.dataset.stack = stack;
         sig.style.setProperty('--sig', `${size}px`);
@@ -2400,7 +2433,7 @@
     const nearLine = c.s < p.A && p.stopS - c.s < 170;
     const turnSide = (p.move === 'L' || p.move === 'R') && nearLine && sharedLane(p.laneKey) ? (p.move === 'L' ? -1 : 1)
       : p.merges && c.s > p.exitStart - 30 && c.s < p.mergeAt + 30 ? p.mergeSide : 0;
-    if (turnSide) {
+    if (turnSide && settings.signals) {
       // A slow, soft blink.
       const b = 0.5 + 0.5 * Math.sin((state.pulse + c.id * 0.37) * 6.3);
       if (b > 0.35) {
@@ -2549,9 +2582,9 @@
     g.save();
     g.translate(x, y);
     g.fillStyle = 'rgba(14, 16, 20, 0.88)';
-    roundRect(g, -33, -27, 66, 54, 10); g.fill();
+    roundRect(g, -38, -27, 76, 54, 10); g.fill();
     g.strokeStyle = red ? '#ff3b3b' : '#3b82ff'; g.lineWidth = 3;
-    roundRect(g, -33, -27, 66, 54, 10); g.stroke();
+    roundRect(g, -38, -27, 76, 54, 10); g.stroke();
     // Arrow the way it will drive.
     g.save();
     g.rotate(Math.atan2(d.y, d.x));
@@ -2559,10 +2592,10 @@
     g.beginPath(); g.moveTo(14, 0); g.lineTo(2, -9); g.lineTo(2, -4); g.lineTo(-12, -4); g.lineTo(-12, 4); g.lineTo(2, 4); g.lineTo(2, 9); g.closePath(); g.fill();
     g.restore();
     g.fillStyle = '#f2f6f3';
-    g.font = '800 8px Archivo, system-ui, sans-serif';
+    g.font = '7px "Press Start 2P", monospace';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(em.type.name.toUpperCase(), 0, -17);
-    g.font = '700 9px "IBM Plex Mono", ui-monospace, monospace';
+    g.font = '14px VT323, monospace';
     g.fillText(`${Math.max(0, Math.ceil(em.spawnAt - state.t))}s`, 0, 18);
     g.restore();
   }
@@ -2579,7 +2612,7 @@
       roundRect(g, x - 15, y - 9, 30, 18, 4); g.fill();
       g.globalAlpha = 1;
       g.fillStyle = '#fff';
-      g.font = '700 11px "IBM Plex Mono", ui-monospace, monospace';
+      g.font = '15px VT323, monospace';
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('+' + sp.pending.length, x, y + 1);
     }
@@ -2632,7 +2665,7 @@
       const life = p.big ? 1.4 : 0.9;
       const k = p.t / life;
       g.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
-      g.font = `800 ${p.big ? 15 : 11}px Archivo, system-ui, sans-serif`;
+      g.font = `${p.big ? 11 : 8}px "Press Start 2P", monospace`;
       const y = p.y - 6 - k * 22;
       g.lineWidth = 3; g.strokeStyle = 'rgba(22, 27, 33, 0.9)';
       g.strokeText(p.text, p.x, y);
@@ -2649,7 +2682,7 @@
       // Over the middle of the junction, where no signal set sits.
       g.translate(CX, CY);
       g.scale(0.7 + 0.3 * pop, 0.7 + 0.3 * pop);
-      g.font = '800 17px Archivo, system-ui, sans-serif';
+      g.font = '10px "Press Start 2P", monospace';
       const w = g.measureText(b.text).width + 28;
       g.fillStyle = 'rgba(22, 27, 33, 0.88)';
       roundRect(g, -w / 2, -16, w, 32, 16); g.fill();
@@ -2949,8 +2982,9 @@
   function updateMenu() {
     const next = Math.min(progress.unlocked, LEVELS.length) - 1;
     ui.menuStars.textContent = `★ ${totalStars()}/${LEVELS.length * 3}`;
+    el('menu-levels-note').textContent = `★ ${totalStars()}/${LEVELS.length * 3}`;
     const best = Math.max(0, ...Object.values(progress.scores));
-    ui.menuBest.textContent = best ? `Best shift ${fmtNum(best)}` : 'No shifts yet';
+    ui.menuBest.textContent = best ? `Hi ${fmtNum(best)}` : '';
     ui.menuShift.textContent = `Signal duty · Shift ${next + 1}`;
     ui.menuContinue.textContent = suspended ? 'Resume' : progress.unlocked > 1 || progress.stars[0] ? 'Continue' : 'Play';
     ui.menuContinueSub.textContent = suspended
@@ -2978,17 +3012,46 @@
     showScreen('menu');
   }
 
+  // Settings: pixel ON/OFF switches by group, then the progress resets.
   function showSettings(confirming) {
-    showCard(`
-      <p class="eyebrow">Settings</p>
-      <h2>Control room</h2>
-      <p class="muted">Progress, stars and best scores are saved in this browser only.</p>
-      <div class="card-actions">
-        ${confirming
-          ? '<button class="danger" type="button" data-action="reset-confirm">Yes, erase everything</button><button type="button" data-action="settings">Keep my progress</button>'
-          : '<button type="button" data-action="reset">Reset all progress</button>'}
-        <button class="primary" type="button" data-action="close">Done</button>
+    const groups = {};
+    for (const [key, def] of Object.entries(SETTINGS)) (groups[def.group] ||= []).push(`
+      <div class="setting">
+        <span class="setting-text"><span class="setting-name">${def.name}</span><span class="setting-hint">${def.hint}</span></span>
+        <button class="switch" type="button" role="switch" aria-checked="${settings[key]}" aria-label="${def.name}" data-action="toggle-setting" data-key="${key}">${settings[key] ? 'On' : 'Off'}</button>
       </div>`);
+    const sections = Object.entries(groups).map(([name, rows]) => `
+      <div class="settings-group"><p class="label">${name}</p><div class="settings-list">${rows.join('')}</div></div>`).join('');
+    const reset = confirming === 'all'
+      ? '<p class="muted">Erase every star, score and unlocked level?</p><div class="card-actions"><button class="danger" type="button" data-action="reset-confirm">Yes, erase all</button><button type="button" data-action="settings">Keep it</button></div>'
+      : confirming === 'bests'
+        ? '<p class="muted">Erase every freeplay best?</p><div class="card-actions"><button class="danger" type="button" data-action="reset-bests-confirm">Yes, erase bests</button><button type="button" data-action="settings">Keep them</button></div>'
+        : '<div class="card-actions"><button type="button" data-action="reset-bests">Reset freeplay bests</button><button class="danger" type="button" data-action="reset">Reset all progress</button></div>';
+    showCard(`
+      <p class="eyebrow">Control room</p>
+      <h2>Settings</h2>
+      ${sections}
+      <div class="settings-group"><p class="label">Progress</p>${reset}</div>
+      <p class="about">${el('menu-version').textContent}</p>
+      <div class="card-actions"><button class="primary" type="button" data-action="close">Done</button></div>`);
+  }
+
+  function toggleSetting(key) {
+    settings[key] = !settings[key];
+    saveSettings();
+    applySettings();
+    // Button size changes how the signal sets fit the map.
+    if (key === 'bigButtons' && !ui.game.hidden) resize();
+    const top = ui.overlay.scrollTop;
+    showSettings();
+    ui.overlay.scrollTop = top;
+    ui.card.querySelector(`[data-key="${key}"]`)?.focus({ preventScroll: true });
+  }
+
+  function resetBests() {
+    for (const k of Object.keys(freeplayBests)) delete freeplayBests[k];
+    bestsDirty = true; saveFreeplayBests();
+    showSettings();
   }
 
   function resetProgress() {
@@ -3341,8 +3404,11 @@
     else if (action === 'back') { showScreen('game'); resumeSuspended(); }
     else if (action === 'menu') { goToMenu(); return; }
     else if (action === 'close') { hideCard(); return; }
-    else if (action === 'settings') { showSettings(false); return; }
-    else if (action === 'reset') { showSettings(true); return; }
+    else if (action === 'settings') { showSettings(); return; }
+    else if (action === 'reset') { showSettings('all'); return; }
+    else if (action === 'reset-bests') { showSettings('bests'); return; }
+    else if (action === 'reset-bests-confirm') { resetBests(); return; }
+    else if (action === 'toggle-setting') { toggleSetting(btn.dataset.key); return; }
     else if (action === 'reset-confirm') { resetProgress(); return; }
     if (action !== 'levels' && action !== 'freeplay-setup' && action !== 'back' && action !== 'resume') suspended = null;
   });
@@ -3383,7 +3449,18 @@
   window.addEventListener('keydown', e => {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     // The menu has no shift to control: Esc only closes a card there.
-    if (!ui.menu.hidden) { if (e.code === 'Escape') hideCard(); return; }
+    if (!ui.menu.hidden) {
+      if (e.code === 'Escape') hideCard();
+      // Arrow keys move the menu cursor; Enter or Space picks.
+      if ((e.code === 'ArrowDown' || e.code === 'ArrowUp') && ui.overlay.hidden) {
+        e.preventDefault();
+        const items = [...ui.menu.querySelectorAll('.menu-item')];
+        const at = items.indexOf(document.activeElement);
+        const next = at < 0 ? (e.code === 'ArrowDown' ? 0 : items.length - 1) : (at + (e.code === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+        items[next].focus();
+      }
+      return;
+    }
     if ((e.code === 'Escape' || e.code === 'KeyP') && suspended) { resumeSuspended(); return; }
     if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
     // Number row and numeric keypad both work.
@@ -3394,6 +3471,9 @@
     if (document.hidden && state.mode === 'running') togglePause();
   });
   window.addEventListener('resize', resize);
+  // The signal sets are sized from their labels' text, so measure again once
+  // the pixel fonts have loaded.
+  if (document.fonts) document.fonts.ready.then(() => { if (!ui.game.hidden) resize(); });
   // Belt and braces for iOS, which can ignore the viewport's no-zoom setting:
   // swallow pinch gestures and double-tap zoom so the screen never moves.
   for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, e => e.preventDefault(), { passive: false });

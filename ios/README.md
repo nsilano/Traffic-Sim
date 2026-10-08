@@ -28,7 +28,7 @@ edit `CFBundleDisplayName` in `project.yml`.
 |---|---|
 | `TrafficSim/TrafficSimApp.swift`, `GameView.swift` | the app: a full-screen web view that loads the bundled game |
 | `TrafficSim/Assets.xcassets` | app icon and launch colour |
-| `fonts/` | Archivo and IBM Plex Mono (SIL Open Font License) so the app works offline |
+| `fonts/` | Press Start 2P, VT323, Archivo and IBM Plex Mono (SIL Open Font License) so the app works offline |
 | `build-game.py` | copies the game into the app and points it at the local fonts |
 | `project.yml` | XcodeGen spec for the Xcode project |
 

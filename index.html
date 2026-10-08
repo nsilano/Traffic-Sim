@@ -3,60 +3,61 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#f5b800">
+<meta name="theme-color" content="#0a1030">
 <title>Intersection Control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=IBM+Plex+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=IBM+Plex+Mono:wght@500;700&family=Press+Start+2P&family=VT323&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main class="app">
   <section class="menu" id="menu" aria-label="Main menu">
-    <div class="hazard" aria-hidden="true"></div>
+    <div class="menu-scene" aria-hidden="true">
+      <span class="moon"></span>
+      <span class="star-dot" style="left: 10%; top: 14%"></span>
+      <span class="star-dot" style="left: 28%; top: 7%"></span>
+      <span class="star-dot" style="left: 57%; top: 17%"></span>
+      <span class="star-dot" style="left: 92%; top: 22%"></span>
+      <span class="star-dot" style="left: 71%; top: 5%"></span>
+      <span class="wire"></span>
+    </div>
+
     <div class="menu-inner">
-      <header class="menu-head">
-        <div class="menu-title">
-          <span class="menu-version" id="menu-version">1.0</span>
-          <span class="mono-label" id="menu-shift">Signal duty · Shift 1</span>
-          <h1>Inter<br>section<br>Control</h1>
-        </div>
-        <div class="menu-chips">
-          <span class="chip" id="menu-stars">★ 0/21</span>
-          <span class="mono-label" id="menu-best">No shifts yet</span>
-        </div>
-      </header>
-
-      <div class="signal-head">
-        <div class="lamp-labels" aria-hidden="true">
-          <span class="lamp-label">Settings</span>
-          <span class="lamp-label">Freeplay</span>
-          <span class="lamp-label go"><span id="menu-continue">Play</span><span class="mono-label" id="menu-continue-sub">First Shift</span></span>
-        </div>
-        <div class="housing" id="menu-housing" data-lit="green">
-          <button class="menu-lamp red" type="button" data-menu="settings" aria-label="Settings">
-            <span class="visor" aria-hidden="true"></span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
-          </button>
-          <button class="menu-lamp amber" type="button" data-menu="freeplay" aria-label="Freeplay">
-            <span class="visor" aria-hidden="true"></span>
-            <span class="infinity" aria-hidden="true">∞</span>
-          </button>
-          <button class="menu-lamp green" type="button" data-menu="play" aria-label="Play the next shift">
-            <span class="visor" aria-hidden="true"></span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-          </button>
-        </div>
-        <div class="lamp-spacer" aria-hidden="true"></div>
+      <div class="menu-top">
+        <span class="menu-version" id="menu-version">1.0</span>
+        <span class="menu-stars" id="menu-stars">★ 0/21</span>
       </div>
-
-      <nav class="menu-links" aria-label="More">
-        <button type="button" data-menu="levels">Levels</button>
-        <button type="button" data-menu="records">Records</button>
-        <button type="button" data-menu="help">How to play</button>
+      <div class="hanging-light" id="menu-housing" data-lit="green" aria-hidden="true">
+        <span class="hl-cable"></span>
+        <span class="hl-box"><span class="hl-lamp red"></span><span class="hl-lamp amber"></span><span class="hl-lamp green"></span></span>
+      </div>
+      <header class="menu-title">
+        <h1><span class="t1">Intersection</span><span class="t2">Control</span></h1>
+        <p class="menu-shift" id="menu-shift">Signal duty · Shift 1</p>
+      </header>
+      <div class="menu-spacer"></div>
+    </div>
+    <div class="skyline" aria-hidden="true">
+      <span class="bldg" style="--w: 13%; --h: 62%; --lit: #ffd96a"></span>
+      <span class="bldg dark" style="--w: 9%; --h: 44%"></span>
+      <span class="bldg" style="--w: 16%; --h: 82%; --lit: #ffd96a"></span>
+      <span class="bldg dark" style="--w: 10%; --h: 54%"></span>
+      <span class="bldg" style="--w: 14%; --h: 72%; --lit: #7fd7ff"></span>
+      <span class="bldg dark" style="--w: 9%; --h: 40%"></span>
+      <span class="bldg" style="--w: 19%; --h: 66%; --lit: #ffd96a"></span>
+      </div>
+    <div class="street" aria-hidden="true"><span class="lane-line"></span><span class="menu-car east"></span><span class="menu-car west"></span></div>
+    <div class="menu-ground">
+      <nav class="menu-list" aria-label="Main menu">
+        <button class="menu-item first" type="button" data-menu="play"><span class="cursor" aria-hidden="true">▶</span><span class="item-label" id="menu-continue">Play</span><span class="item-note" id="menu-continue-sub">First Shift</span></button>
+        <button class="menu-item" type="button" data-menu="freeplay"><span class="cursor" aria-hidden="true">▶</span><span class="item-label">Freeplay</span><span class="item-note">Any map</span></button>
+        <button class="menu-item" type="button" data-menu="levels"><span class="cursor" aria-hidden="true">▶</span><span class="item-label">Levels</span><span class="item-note" id="menu-levels-note"></span></button>
+        <button class="menu-item" type="button" data-menu="records"><span class="cursor" aria-hidden="true">▶</span><span class="item-label">Records</span><span class="item-note" id="menu-best">No shifts yet</span></button>
+        <button class="menu-item" type="button" data-menu="settings"><span class="cursor" aria-hidden="true">▶</span><span class="item-label">Settings</span><span class="item-note"></span></button>
+        <button class="menu-item" type="button" data-menu="help"><span class="cursor" aria-hidden="true">▶</span><span class="item-label">How to play</span><span class="item-note"></span></button>
       </nav>
     </div>
-    <div class="hazard" aria-hidden="true"></div>
   </section>
 
   <section class="game" id="game" hidden aria-label="Intersection">

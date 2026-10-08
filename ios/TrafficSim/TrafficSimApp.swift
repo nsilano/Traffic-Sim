@@ -6,7 +6,7 @@ struct TrafficSimApp: App {
         WindowGroup {
             GameView()
                 .ignoresSafeArea()
-                .background(Color(red: 20/255, green: 20/255, blue: 20/255))
+                .background(Color(red: 10/255, green: 16/255, blue: 48/255))
                 .statusBarHidden(false)
                 .persistentSystemOverlays(.hidden)
         }

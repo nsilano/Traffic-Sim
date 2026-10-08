@@ -13,7 +13,7 @@ struct GameView: UIViewRepresentable {
 
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
-        web.backgroundColor = UIColor(red: 20/255, green: 20/255, blue: 20/255, alpha: 1)
+        web.backgroundColor = UIColor(red: 10/255, green: 16/255, blue: 48/255, alpha: 1)
         web.scrollView.backgroundColor = web.backgroundColor
         web.scrollView.bounces = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
