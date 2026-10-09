@@ -91,8 +91,10 @@ public final class Car {
     var habit: String?
     var bumped = false
     var willBump: Bool?
-    /// Seconds spent waiting at the line.
+    /// Seconds spent waiting at the line, in total (for the stats).
     public internal(set) var wait = 0.0
+    /// Seconds waiting at the front of the line since last moving: what patience runs on.
+    public internal(set) var lightWait = 0.0
     /// The yellow cycle this driver committed to going on, and the one they last decided on.
     var commit = -1
     var decided = -1
@@ -147,23 +149,25 @@ public final class Pedestrian {
     let back: Double
     let speed: Double
     public let color: String
-    public enum State { case arriving, waiting, crossing }
+    public enum State { case arriving, waiting, crossing, leaving }
     public internal(set) var state = State.arriving
     public internal(set) var wait = 0.0
     /// Walk-cycle phase, for drawing.
     public internal(set) var phase: Double
     var paused = 0.0
-    public let route: Route
+    /// The walk in to the corner, or (once across) the walk off the map.
+    public internal(set) var route: Route
     public internal(set) var routeAt = 0.0
     weak var blocker: Car?
     var sideTo: Double?
     var hit = false
     var honked = false
+    var gone = false
 
     /// Where across the road this person stands while waiting at the corner.
     public var waitV: Double { start - dir * back }
 
-    /// The walk in from off the board to the waiting spot at the corner.
+    /// A walk along the sidewalk: in from off the board to the corner, or back off it.
     public struct Route {
         public let pts: [Vec]
         public let cum: [Double]

@@ -61,6 +61,9 @@ public final class CornerMonitor {
         public var total = 0
         public var oldest = 0.0
         public var groups: [Int: Int] = [:]
+        /// The longest wait at each button, and the button waiting longest (if anyone is).
+        public var groupOldest: [Int: Double] = [:]
+        public var longest: Int?
         /// "ok", "warn" (half the patience used) or "bad".
         public var level = "ok"
         public var busiest = false
@@ -96,7 +99,8 @@ public final class CornerMonitor {
             if !queued.contains(c.id) && c.v >= 12 { continue }
             by[p.dir]!.total += 1
             by[p.dir]!.groups[p.group, default: 0] += 1
-            by[p.dir]!.oldest = max(by[p.dir]!.oldest, c.wait)
+            by[p.dir]!.oldest = max(by[p.dir]!.oldest, c.lightWait)
+            by[p.dir]!.groupOldest[p.group] = max(by[p.dir]!.groupOldest[p.group] ?? 0, c.lightWait)
         }
         queued.formIntersection(live)
         for k in Direction.allCases {
@@ -109,6 +113,7 @@ public final class CornerMonitor {
             by[k]!.total += 1
             by[k]!.groups[cw.group, default: 0] += 1
             by[k]!.oldest = max(by[k]!.oldest, ped.wait)
+            by[k]!.groupOldest[cw.group] = max(by[k]!.groupOldest[cw.group] ?? 0, ped.wait)
         }
 
         // The busiest marker stays at least 8 seconds, never leaves a corner that has a
@@ -152,6 +157,9 @@ public final class CornerMonitor {
             m.level = m.oldest > angry ? "bad" : m.oldest > angry * 0.5 ? "warn" : "ok"
             m.busiest = head.dir == busiest && sim.mode == .running
             m.emergency = em?.dir == head.dir
+            m.longest = (head.carGroups + head.walkGroups)
+                .filter { (m.groupOldest[$0] ?? 0) >= 1 }
+                .max { (m.groupOldest[$0] ?? 0) < (m.groupOldest[$1] ?? 0) }
             by[head.dir] = m
         }
         corners = by

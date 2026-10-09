@@ -632,7 +632,15 @@ public final class Simulation {
             if mustStop && before <= p.stopS && c.s > p.stopS { c.s = p.stopS; c.v = 0 }
             if before <= p.stopS && c.s > p.stopS && groups[gi].light == .green { groups[gi].passed += 1 }
 
-            if c.v < 4 && c.s <= p.stopS + 1 && !mistakeLanes.contains(p.laneKey) { c.wait += dt }
+            if c.v < 4 && c.s <= p.stopS + 1 && !mistakeLanes.contains(p.laneKey) {
+                c.wait += dt
+                // Patience only runs for the driver at the front of the line, and starts over once
+                // they get moving: a car that pulls up but misses the light isn't the player's fault.
+                if lead.map({ $0.s > $0.path.stopS + 1 }) ?? true { c.lightWait += dt }
+            } else if c.v > 5 {
+                c.lightWait = 0
+                c.honked = false
+            }
         }
 
         // Cars that left the map count as cleared.
@@ -895,7 +903,7 @@ public final class Simulation {
                 pedSpawners[i].timer = rng.exponential(mean: 1 / cap)
                 if rng.next() * cap >= now { continue }
                 let sp = pedSpawners[i]
-                let waiting = peds.filter { $0.crosswalk == sp.crosswalk && $0.dir == sp.dir && $0.state != .crossing }.count
+                let waiting = peds.filter { $0.crosswalk == sp.crosswalk && $0.dir == sp.dir && ($0.state == .arriving || $0.state == .waiting) }.count
                 if waiting >= 6 { continue }
                 let cw = geometry.crosswalks[sp.crosswalk]
                 let start = sp.dir > 0 ? cw.road0 - 9 : cw.road1 + 9
@@ -907,10 +915,12 @@ public final class Simulation {
         }
         for ped in peds {
             let gi = geometry.crosswalks[ped.crosswalk].group
-            if ped.state == .arriving {
+            if ped.state == .arriving || ped.state == .leaving {
                 ped.routeAt += ped.speed * 1.1 * dt
                 ped.phase += dt * 10
-                if ped.routeAt >= ped.route.len { ped.state = .waiting }
+                if ped.routeAt >= ped.route.len {
+                    if ped.state == .leaving { ped.gone = true } else { ped.state = .waiting }
+                }
                 continue
             }
             if ped.state == .waiting {
@@ -930,10 +940,31 @@ public final class Simulation {
                 }
             }
         }
-        peds = peds.filter { p in
+        for p in peds {
             let cw = geometry.crosswalks[p.crosswalk]
-            return !(p.state == .crossing && (p.dir > 0 ? p.v > cw.road1 + 10 : p.v < cw.road0 - 10))
+            if p.state == .crossing && (p.dir > 0 ? p.v > cw.road1 + 10 : p.v < cw.road0 - 10) {
+                p.state = .leaving
+                p.route = exitRoute(p)
+                p.routeAt = 0
+            }
         }
+        peds = peds.filter { !$0.gone }
+    }
+
+    /// The way out once across: along the sidewalk on the far side and off the map.
+    func exitRoute(_ ped: Pedestrian) -> Pedestrian.Route {
+        let cw = geometry.crosswalks[ped.crosswalk]
+        let k = cw.leg
+        let dims = legDims(k)
+        let half = World.sidewalk / 2
+        let u = cw.uc + ped.du
+        let pts: [Vec] = ped.dir > 0
+            ? [k.point(u, ped.v), k.point(u - 10, dims.R + half), k.point(dims.far - 10, dims.R + half)]
+            : [k.point(u, ped.v), k.point(u - 10, -dims.L0 - half), k.point(dims.m0, -dims.L0 - half),
+               k.point(dims.m1, -dims.L1 - half), k.point(dims.far - 10, -dims.L1 - half)]
+        var cum = [0.0]
+        for i in 1..<pts.count { cum.append(cum[i - 1] + pts[i].distance(to: pts[i - 1])) }
+        return Pedestrian.Route(pts: pts, cum: cum, len: cum[cum.count - 1])
     }
 
     func onCrosswalk(_ cw: Crosswalk, _ pt: Vec, _ pad: Double) -> Bool {
@@ -1130,7 +1161,7 @@ public final class Simulation {
 
     // MARK: Patience, busy groups, win and lose
 
-    func isAngry(_ c: Car) -> Bool { c.wait > level.angry && c.s <= c.path.stopS + 1 }
+    func isAngry(_ c: Car) -> Bool { c.lightWait > level.angry && c.s <= c.path.stopS + 1 }
 
     func updateStatus(_ dt: Double) {
         for i in groups.indices { groups[i].busy = 0 }

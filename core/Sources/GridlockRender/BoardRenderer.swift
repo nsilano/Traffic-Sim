@@ -573,7 +573,7 @@ public final class BoardRenderer {
         let showAngry = sim.freeplay == nil
         for ped in sim.peds {
             let crossing = ped.state == .crossing
-            let arriving = ped.state == .arriving
+            let arriving = ped.state == .arriving || ped.state == .leaving
             let cw = geo.crosswalks[ped.crosswalk]
             let at: Vec
             let ang: Double
@@ -601,7 +601,7 @@ public final class BoardRenderer {
             g.fillStyle = "#3a2e26"
             g.beginPath(); g.arc(0.3, 0, 2.4, 0, .pi * 2); g.fill()
             g.restore()
-            if showAngry && !crossing && ped.wait > sim.level.angry && sin(sim.pulse * 10) > -0.3 {
+            if showAngry && ped.state == .waiting && ped.wait > sim.level.angry && sin(sim.pulse * 10) > -0.3 {
                 g.fillStyle = "#ff4d4f"
                 g.font = "800 10px Archivo"
                 g.textAlign = "center"; g.textBaseline = "middle"
@@ -759,10 +759,10 @@ public final class BoardRenderer {
     private func drawWaitRing(_ g: Canvas, _ c: Car) {
         if sim.freeplay != nil { return }
         let angryAfter = sim.level.angry
-        if c.wait <= angryAfter * 0.3 || c.s > c.path.stopS + 1 { return }
+        if c.lightWait <= angryAfter * 0.3 || c.s > c.path.stopS + 1 { return }
         let at = c.path.point(at: c.s - c.len / 2).position
         if underOverpass(at.x, at.y) { return }
-        let frac = min(1, c.wait / angryAfter)
+        let frac = min(1, c.lightWait / angryAfter)
         g.lineWidth = 2.5
         g.strokeStyle = "rgba(0, 0, 0, 0.45)"
         g.beginPath(); g.arc(at.x, at.y, 8, 0, .pi * 2); g.stroke()

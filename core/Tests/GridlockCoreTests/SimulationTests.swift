@@ -137,7 +137,48 @@ final class PlayerDataTests: XCTestCase {
             let monitor = CornerMonitor()
             for _ in 0..<(40 * 60) { sim.step(1.0 / 60); monitor.update(sim, layout) }
             XCTAssertFalse(monitor.corners.isEmpty)
+            for head in layout.heads {
+                let corner = monitor.corners[head.dir]!
+                guard let g = corner.longest else { continue }
+                XCTAssertTrue((head.carGroups + head.walkGroups).contains(g), "level \(i + 1): the longest wait is one of this corner's buttons")
+                XCTAssertEqual(corner.groupOldest[g], corner.oldest, "level \(i + 1): the timer sits on the button waiting longest")
+            }
         }
+    }
+
+    /// Patience only runs for the driver at the front of the line.
+    func testOnlyTheFrontCarWaits() {
+        let sim = Simulation(levelIndex: 0, rng: Random(seed: 3))
+        sim.mode = .running
+        for _ in 0..<(30 * 60) { sim.step(1.0 / 60) }
+        var queued = 0
+        for c in sim.cars where c.s <= c.path.stopS + 1 && c.v < 1 {
+            let ahead = sim.cars.contains { $0 !== c && $0.path.laneKey == c.path.laneKey && $0.s > c.s && $0.s <= $0.path.stopS + 1 }
+            if ahead {
+                queued += 1
+                XCTAssertEqual(c.lightWait, 0, "a car behind another isn't using up patience")
+            }
+            XCTAssertGreaterThanOrEqual(c.wait, c.lightWait)
+        }
+        XCTAssertGreaterThan(queued, 0, "the test needs a queue")
+    }
+
+    /// People who cross walk on along the sidewalk and off the map, rather than vanishing.
+    func testPedestriansWalkOff() {
+        let sim = Simulation(levelIndex: 2, rng: Random(seed: 4))
+        sim.mode = .running
+        let walks = sim.groups.indices.filter { sim.groups[$0].kind == .walk }
+        var sawLeaving = false
+        for frame in 0..<(90 * 60) {
+            if frame % (12 * 60) == 0 { for g in walks { sim.toggle(g) } }
+            sim.step(1.0 / 60)
+            for ped in sim.peds where ped.state == .leaving {
+                sawLeaving = true
+                let end = ped.route.pts.last!
+                XCTAssertTrue(end.x < 0 || end.y < 0 || end.x > World.width || end.y > World.height, "they leave off the edge of the map")
+            }
+        }
+        XCTAssertTrue(sawLeaving)
     }
 
     func testLiveDensity() {
