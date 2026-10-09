@@ -83,16 +83,16 @@ struct BoardFit: Equatable {
     static func estimateSize(_ head: ControlLayout.Head, button: CGFloat, column: Bool) -> CGSize {
         let n = CGFloat(head.carGroups.count + head.walkGroups.count)
         let gap: CGFloat = 5, pad: CGFloat = 4 + 2
-        // Each cell is the button plus its info column (three slots beside it).
+        // Each cell is the button plus the wait-timer slot beside it.
         let cellW = button + SignalButton.infoGap + SignalButton.infoWidth
-        let cellH = max(button, 3 * SignalButton.slotHeight + 2 * SignalButton.slotGap)
+        let cellH = max(button, SignalButton.slotHeight)
         let label: CGFloat = column ? 70 : 110
         if column {
             let h = n * cellH + max(0, n - 1) * gap + pad * 2
-            return CGSize(width: max(cellW + pad * 2, label), height: h + 2 * 22 + 6)
+            return CGSize(width: max(cellW + pad * 2, label), height: h + 22 + 3)
         }
         let w = n * cellW + max(0, n - 1) * gap + pad * 2
-        return CGSize(width: max(w, label), height: cellH + pad * 2 + 2 * 22 + 6)
+        return CGSize(width: max(w, label), height: cellH + pad * 2 + 22 + 3)
     }
 
     static func compute(available: CGSize, layout: ControlLayout, bigButtons: Bool) -> BoardFit {
@@ -202,8 +202,6 @@ struct SignalButton: View {
         let g = sim.groups[group]
         let walk = g.kind == .walk
         let live = sim.mode == .running && sim.failAt == nil
-        let unsafe = live && g.light == .red && sim.isUnsafe(group)
-        let count = game.setting("counts") ? (game.monitor.corners[dir]?.groups[group] ?? 0) : 0
         let emergency = game.monitor.emergencyGroups.contains(group) && game.monitor.corners[dir]?.emergency == true
         let corner = game.monitor.corners[dir]
         // The wait timer sits on the button that has waited longest at this corner.
@@ -215,7 +213,6 @@ struct SignalButton: View {
         let fill: Color = g.light == .green ? Pixel.go : g.light == .yellow ? Pixel.yellow : Pixel.stop
         let rotations: [Direction: Double] = [.N: 0, .E: 90, .S: 180, .W: -90]
         let rotation = walk ? 0 : rotations[dir]!
-        let counts = game.setting("counts")
         HStack(spacing: Self.infoGap) {
             Button {
                 game.toggle(group)
@@ -243,24 +240,23 @@ struct SignalButton: View {
             .buttonStyle(.plain)
             .disabled(!live || g.light == .yellow)
             .accessibilityLabel(walk ? "Walk across \(g.label)" : "\(dir.name) \(g.move == "L" ? "left turn" : g.move == "A" ? "all lanes" : "straight and right")")
-            .accessibilityValue((g.light == .green ? "Green" : g.light == .yellow ? "Yellow" : unsafe ? "Red, not safe yet" : "Red")
-                                + (counts ? ", \(count) waiting" : "")
+            .accessibilityValue((g.light == .green ? "Green" : g.light == .yellow ? "Yellow" : "Red")
                                 + (longest.map { ", longest wait \(Int($0)) seconds" } ?? ""))
 
-            // Beside every button, the same three slots in the same order: how many are
-            // waiting, the longest wait (on the button waiting longest at this corner), and
-            // "!" when turning it green now isn't safe. Empty slots keep their space.
-            VStack(spacing: Self.slotGap) {
-                slot(counts ? "\(count)" : nil, fg: count > 0 ? Color(hex: 0x05040B) : Pixel.dim,
-                     bg: count > 0 ? Pixel.text : Color(hex: 0x0A0814), edge: Pixel.edge)
+            // Beside every button, a slot for the wait timer: filled on the button that has
+            // waited longest at this corner, empty (but keeping its space) on the others.
+            Group {
                 if let w = longest {
                     let bad = w > angry, warn = w > angry * 0.5
-                    slot("\(min(Int(w), 999))s", fg: bad ? .white : warn ? Color(hex: 0x05040B) : Pixel.text,
-                         bg: bad ? Pixel.stop : warn ? Pixel.yellow : Color(hex: 0x05040B), edge: bad ? .white : warn ? Pixel.yellow : Pixel.edge)
+                    Text("\(min(Int(w), 999))s").font(Pixel.term(15))
+                        .foregroundColor(bad ? .white : warn ? Color(hex: 0x05040B) : Pixel.text)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .frame(width: Self.infoWidth, height: Self.slotHeight)
+                        .background(bad ? Pixel.stop : warn ? Pixel.yellow : Color(hex: 0x05040B)).cornerRadius(2)
+                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(bad ? .white : warn ? Pixel.yellow : Pixel.edge, lineWidth: 1))
                 } else {
-                    slot(nil, fg: .clear, bg: .clear, edge: .clear)
+                    Color.clear.frame(width: Self.infoWidth, height: Self.slotHeight)
                 }
-                slot(unsafe ? "!" : nil, fg: .white, bg: Pixel.stop, edge: Color(hex: 0x05040B))
             }
             .accessibilityHidden(true)
         }
@@ -269,20 +265,6 @@ struct SignalButton: View {
     static let infoWidth: CGFloat = 30
     static let infoGap: CGFloat = 3
     static let slotHeight: CGFloat = 14
-    static let slotGap: CGFloat = 2
-
-    @ViewBuilder
-    private func slot(_ text: String?, fg: Color, bg: Color, edge: Color) -> some View {
-        if let text = text {
-            Text(text).font(Pixel.term(15)).foregroundColor(fg)
-                .lineLimit(1).minimumScaleFactor(0.7)
-                .frame(width: Self.infoWidth, height: Self.slotHeight)
-                .background(bg).cornerRadius(2)
-                .overlay(RoundedRectangle(cornerRadius: 2).stroke(edge, lineWidth: 1))
-        } else {
-            Color.clear.frame(width: Self.infoWidth, height: Self.slotHeight)
-        }
-    }
 }
 
 /// A walk button's picture: a walking figure and a double arrow for the way people cross,
@@ -351,8 +333,8 @@ struct Triangle: Shape {
     }
 }
 
-/// One corner's set: the direction label (the busiest ★, the emergency flash), the buttons,
-/// and the waiting monitor.
+/// One corner's set: the direction label (the busiest ★, the emergency flash) and the buttons,
+/// each with its wait-timer slot.
 struct SignalSet: View {
     @ObservedObject var game: NativeGame
     @ObservedObject var session: BoardSession
@@ -394,23 +376,11 @@ struct SignalSet: View {
         .cornerRadius(4)
         .shadow(color: busiest ? Pixel.yellow.opacity(0.55) : .clear, radius: 8)
 
-        let waitBg: Color = corner.level == "bad" ? Pixel.stop : corner.level == "warn" ? Pixel.yellow : Color(hex: 0x0A0814).opacity(0.9)
-        let wait = Text(fit.column ? "\(corner.total)" : "\(corner.total) WAITING")
-            .font(Pixel.term(fit.column ? 15 : 17))
-            .foregroundColor(corner.level == "bad" ? .white : corner.level == "warn" ? Color(hex: 0x05040B) : Pixel.text)
-            .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(waitBg)
-            .overlay(RoundedRectangle(cornerRadius: 2).stroke(corner.level == "ok" ? Pixel.edge : waitBg, lineWidth: 2))
-            .cornerRadius(2)
-        let counts = game.setting("counts")
-
         VStack(alignment: head.extendsRight ? .leading : .trailing, spacing: 3) {
             if head.extendsDown {
                 label
                 buttons
-                if counts { wait }
             } else {
-                if counts { wait }
                 buttons
                 label
             }

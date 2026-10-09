@@ -508,16 +508,7 @@ struct HelpScreen: View {
                     "Busiest corner. Its set of buttons gets a yellow outline and a ★: most people are waiting there, so it probably needs a green next.")
                 RowDivider()
                 key(AnyView(Text("31s").font(Pixel.term(20)).foregroundColor(.white).padding(.horizontal, 5).background(Pixel.stop)),
-                    "The longest wait at each corner, on the button that's been waiting longest. Only the driver at the front of a line is counted, and their wait starts over once they get moving. It turns yellow, then red, as they lose patience.")
-                RowDivider()
-                key(AnyView(Text("15 WAITING").font(Pixel.term(20)).foregroundColor(Pixel.text).padding(.horizontal, 5).background(Pixel.deep)),
-                    "Beside each set of buttons: how many are waiting there in all.")
-                RowDivider()
-                key(AnyView(Text("7").font(Pixel.term(20)).foregroundColor(Pixel.deep).frame(minWidth: 20).background(Pixel.text)),
-                    "The number on a button: how many are waiting for that signal.")
-                RowDivider()
-                key(AnyView(Text("!").font(Pixel.font(11)).foregroundColor(.white).frame(width: 22, height: 22).background(Pixel.stop)),
-                    "Not safe yet. Turning it green now would cross moving traffic. Wait for it to clear.")
+                    "Beside each button: the longest wait at that corner, on the button that's been waiting longest. Only the driver at the front of a line is counted, and their wait starts over once they get moving. It turns yellow, then red, as they lose patience.")
                 RowDivider()
                 key(AnyView(Image(systemName: "bolt.fill").foregroundColor(Pixel.yellow).frame(width: 22, height: 22).background(Pixel.deep)),
                     "A driver speeding up to beat a yellow. Watch for them before you switch.")
