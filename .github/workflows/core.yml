@@ -7,6 +7,9 @@ on:
   push:
     paths: ['core/**', '.github/workflows/core.yml']
 
+permissions:
+  contents: write   # to publish the board snapshots to the ci-snapshots branch
+
 jobs:
   test:
     runs-on: macos-26
@@ -26,3 +29,14 @@ jobs:
           name: board-snapshots
           path: ${{ runner.temp }}/snapshots
           if-no-files-found: ignore
+      # The same images on a throwaway branch (overwritten each run), so they can be fetched with git.
+      - name: Publish snapshots to the ci-snapshots branch
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd "$RUNNER_TEMP/snapshots" 2>/dev/null || exit 0
+          git init -q && git checkout -q -b ci-snapshots
+          git add -A
+          git -c user.name="Core CI" -c user.email="ci@users.noreply.github.com" commit -qm "Board snapshots for $GITHUB_SHA"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-snapshots
