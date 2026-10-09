@@ -169,7 +169,8 @@ public final class Pedestrian {
         public let cum: [Double]
         public let len: Double
 
-        public func point(at at: Double) -> (position: Vec, angle: Double) {
+        public func point(at distance: Double) -> (position: Vec, angle: Double) {
+            let at = distance
             var i = 1
             while i < pts.count - 1 && cum[i] < at { i += 1 }
             let a = pts[i - 1], b = pts[i]

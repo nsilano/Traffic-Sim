@@ -67,7 +67,7 @@ public struct PlayerData {
 
     public init() {}
 
-    public func setting(_ key: String) -> Bool { settings[key] ?? settingsList.first { $0.key == key }?.on ?? false }
+    public func setting(_ key: String) -> Bool { settings[key] ?? Self.settingsList.first { $0.key == key }?.on ?? false }
 
     public var totalStars: Int { stars.values.reduce(0) { $0 + $1.filter { $0 }.count } }
 

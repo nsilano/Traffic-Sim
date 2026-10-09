@@ -20,8 +20,13 @@ jobs:
         working-directory: core
         env:
           SNAPSHOT_DIR: ${{ runner.temp }}/snapshots
-        run: swift test 2>&1 | grep -vE '^\[[0-9]+/[0-9]+\] (Compiling|Emitting)' | tail -80
-        shell: bash -o pipefail {0}
+        # Errors first (each once), then the end of the run.
+        run: |
+          swift test > "$RUNNER_TEMP/test.log" 2>&1 && status=0 || status=$?
+          grep -E "error:|failed \(|XCTAssert" "$RUNNER_TEMP/test.log" | awk '!seen[$0]++' | head -40
+          echo "----"
+          grep -vE '^\[[0-9]+/[0-9]+\] (Compiling|Emitting)|warning:' "$RUNNER_TEMP/test.log" | tail -40
+          exit $status
       - name: Upload board snapshots
         if: always()
         uses: actions/upload-artifact@v4
