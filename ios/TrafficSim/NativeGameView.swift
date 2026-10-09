@@ -83,10 +83,16 @@ struct BoardFit: Equatable {
     static func estimateSize(_ head: ControlLayout.Head, button: CGFloat, column: Bool) -> CGSize {
         let n = CGFloat(head.carGroups.count + head.walkGroups.count)
         let gap: CGFloat = 5, pad: CGFloat = 4 + 2
-        let buttons = n * button + max(0, n - 1) * gap + pad * 2
+        // Each cell is the button plus its info column (three slots beside it).
+        let cellW = button + SignalButton.infoGap + SignalButton.infoWidth
+        let cellH = max(button, 3 * SignalButton.slotHeight + 2 * SignalButton.slotGap)
         let label: CGFloat = column ? 70 : 110
-        if column { return CGSize(width: max(button + pad * 2, label), height: buttons + 2 * 22 + 6) }
-        return CGSize(width: max(buttons, label), height: button + pad * 2 + 2 * 22 + 6)
+        if column {
+            let h = n * cellH + max(0, n - 1) * gap + pad * 2
+            return CGSize(width: max(cellW + pad * 2, label), height: h + 2 * 22 + 6)
+        }
+        let w = n * cellW + max(0, n - 1) * gap + pad * 2
+        return CGSize(width: max(w, label), height: cellH + pad * 2 + 2 * 22 + 6)
     }
 
     static func compute(available: CGSize, layout: ControlLayout, bigButtons: Bool) -> BoardFit {
@@ -209,55 +215,73 @@ struct SignalButton: View {
         let fill: Color = g.light == .green ? Pixel.go : g.light == .yellow ? Pixel.yellow : Pixel.stop
         let rotations: [Direction: Double] = [.N: 0, .E: 90, .S: 180, .W: -90]
         let rotation = walk ? 0 : rotations[dir]!
-        Button {
-            game.toggle(group)
-        } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: walk ? 6 : size / 2)
-                    .fill(fill)
-                    .shadow(color: g.light == .red ? .clear : fill.opacity(0.75), radius: 7)
-                RoundedRectangle(cornerRadius: walk ? 6 : size / 2)
-                    .strokeBorder(Color(hex: 0x05040B), lineWidth: 3)
-                if walk {
-                    WalkIcon(horizontal: acrossH).frame(width: size * 0.7, height: size * 0.7)
-                } else {
-                    GlyphShape(kind: g.move)
-                        .stroke(Color(hex: 0x05040B), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                        .frame(width: size / 2, height: size / 2)
-                        .rotationEffect(.degrees(rotation))
+        let counts = game.setting("counts")
+        HStack(spacing: Self.infoGap) {
+            Button {
+                game.toggle(group)
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: walk ? 6 : size / 2)
+                        .fill(fill)
+                        .shadow(color: g.light == .red ? .clear : fill.opacity(0.75), radius: 7)
+                    RoundedRectangle(cornerRadius: walk ? 6 : size / 2)
+                        .strokeBorder(Color(hex: 0x05040B), lineWidth: 3)
+                    if walk {
+                        WalkIcon(horizontal: acrossH).frame(width: size * 0.7, height: size * 0.7)
+                    } else {
+                        GlyphShape(kind: g.move)
+                            .stroke(Color(hex: 0x05040B), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                            .frame(width: size / 2, height: size / 2)
+                            .rotationEffect(.degrees(rotation))
+                    }
+                    if game.setting("colorblind") { ColorBlindMark(light: g.light).frame(width: 9, height: 9).offset(x: size / 2 - 7, y: -size / 2 + 7) }
                 }
-                if game.setting("colorblind") { ColorBlindMark(light: g.light).frame(width: 9, height: 9).offset(x: size / 2 - 7, y: -size / 2 + 7) }
-                if unsafe {
-                    Text("!").font(Pixel.font(8)).foregroundColor(.white)
-                        .frame(width: 16, height: 16).background(Pixel.stop).cornerRadius(2)
-                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color(hex: 0x05040B), lineWidth: 1))
-                        .offset(x: -size / 2 + 2, y: -size / 2 + 2)
-                }
+                .frame(width: size, height: size)
+                .overlay(RoundedRectangle(cornerRadius: walk ? 9 : size / 2 + 3).stroke(Color.white, lineWidth: emergency ? 3 : 0).padding(-4))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!live || g.light == .yellow)
+            .accessibilityLabel(walk ? "Walk across \(g.label)" : "\(dir.name) \(g.move == "L" ? "left turn" : g.move == "A" ? "all lanes" : "straight and right")")
+            .accessibilityValue((g.light == .green ? "Green" : g.light == .yellow ? "Yellow" : unsafe ? "Red, not safe yet" : "Red")
+                                + (counts ? ", \(count) waiting" : "")
+                                + (longest.map { ", longest wait \(Int($0)) seconds" } ?? ""))
+
+            // Beside every button, the same three slots in the same order: how many are
+            // waiting, the longest wait (on the button waiting longest at this corner), and
+            // "!" when turning it green now isn't safe. Empty slots keep their space.
+            VStack(spacing: Self.slotGap) {
+                slot(counts ? "\(count)" : nil, fg: count > 0 ? Color(hex: 0x05040B) : Pixel.dim,
+                     bg: count > 0 ? Pixel.text : Color(hex: 0x0A0814), edge: Pixel.edge)
                 if let w = longest {
                     let bad = w > angry, warn = w > angry * 0.5
-                    Text("\(Int(w))s").font(Pixel.term(15))
-                        .foregroundColor(bad ? .white : warn ? Color(hex: 0x05040B) : Pixel.text)
-                        .frame(minHeight: 16).padding(.horizontal, 3)
-                        .background(bad ? Pixel.stop : warn ? Pixel.yellow : Color(hex: 0x05040B))
-                        .cornerRadius(2)
-                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(bad ? Color.white : Pixel.edge, lineWidth: 1))
-                        .offset(x: -size / 2 + 6, y: size / 2 - 4)
+                    slot("\(min(Int(w), 999))s", fg: bad ? .white : warn ? Color(hex: 0x05040B) : Pixel.text,
+                         bg: bad ? Pixel.stop : warn ? Pixel.yellow : Color(hex: 0x05040B), edge: bad ? .white : warn ? Pixel.yellow : Pixel.edge)
+                } else {
+                    slot(nil, fg: .clear, bg: .clear, edge: .clear)
                 }
-                if count > 0 {
-                    Text("\(count)").font(Pixel.term(15)).foregroundColor(Color(hex: 0x05040B))
-                        .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 2).background(Pixel.text).cornerRadius(2)
-                        .offset(x: size / 2 - 4, y: size / 2 - 4)
-                }
+                slot(unsafe ? "!" : nil, fg: .white, bg: Pixel.stop, edge: Color(hex: 0x05040B))
             }
-            .frame(width: size, height: size)
-            .overlay(RoundedRectangle(cornerRadius: walk ? 9 : size / 2 + 3).stroke(Color.white, lineWidth: emergency ? 3 : 0).padding(-4))
-            .contentShape(Rectangle())
+            .accessibilityHidden(true)
         }
-        .buttonStyle(.plain)
-        .disabled(!live || g.light == .yellow)
-        .accessibilityLabel(walk ? "Walk across \(g.label)" : "\(dir.name) \(g.move == "L" ? "left turn" : g.move == "A" ? "all lanes" : "straight and right")")
-        .accessibilityValue((g.light == .green ? "Green" : g.light == .yellow ? "Yellow" : unsafe ? "Red, not safe yet" : "Red")
-                            + (longest.map { ", longest wait \(Int($0)) seconds" } ?? ""))
+    }
+
+    static let infoWidth: CGFloat = 30
+    static let infoGap: CGFloat = 3
+    static let slotHeight: CGFloat = 14
+    static let slotGap: CGFloat = 2
+
+    @ViewBuilder
+    private func slot(_ text: String?, fg: Color, bg: Color, edge: Color) -> some View {
+        if let text = text {
+            Text(text).font(Pixel.term(15)).foregroundColor(fg)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(width: Self.infoWidth, height: Self.slotHeight)
+                .background(bg).cornerRadius(2)
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(edge, lineWidth: 1))
+        } else {
+            Color.clear.frame(width: Self.infoWidth, height: Self.slotHeight)
+        }
     }
 }
 
