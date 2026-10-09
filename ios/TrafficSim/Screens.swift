@@ -499,7 +499,7 @@ struct HelpScreen: View {
             PixelSection(title: "Run the signals", color: Pixel.cyan) {
                 bullet("The buttons beside each waiting line control those cars. Tap one to turn it green; tap again to send it through yellow to red.")
                 RowDivider()
-                bullet("Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal.")
+                bullet("Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal: the ↔ or ↕ shows which way they cross, and the button's colour matches the edges of its crosswalks on the map.")
                 RowDivider()
                 bullet("Two conflicting greens cause crashes. Each driver decides for themselves whether to run a yellow, so let the box clear before switching the cross street.")
             }
@@ -507,8 +507,11 @@ struct HelpScreen: View {
                 key(AnyView(Text("N ★").font(Pixel.term(20)).foregroundColor(Pixel.deep).padding(.horizontal, 5).background(Pixel.yellow)),
                     "Busiest corner. Its set of buttons gets a yellow outline and a ★: most people are waiting there, so it probably needs a green next.")
                 RowDivider()
-                key(AnyView(Text("15 · 31S").font(Pixel.term(20)).foregroundColor(.white).padding(.horizontal, 5).background(Pixel.stop)),
-                    "Beside each set of buttons: how many are waiting and the longest wait. It turns yellow, then red, as drivers lose patience.")
+                key(AnyView(Text("31s").font(Pixel.term(20)).foregroundColor(.white).padding(.horizontal, 5).background(Pixel.stop)),
+                    "The longest wait at each corner, on the button that's been waiting longest. Only the driver at the front of a line is counted, and their wait starts over once they get moving. It turns yellow, then red, as they lose patience.")
+                RowDivider()
+                key(AnyView(Text("15 WAITING").font(Pixel.term(20)).foregroundColor(Pixel.text).padding(.horizontal, 5).background(Pixel.deep)),
+                    "Beside each set of buttons: how many are waiting there in all.")
                 RowDivider()
                 key(AnyView(Text("7").font(Pixel.term(20)).foregroundColor(Pixel.deep).frame(minWidth: 20).background(Pixel.text)),
                     "The number on a button: how many are waiting for that signal.")

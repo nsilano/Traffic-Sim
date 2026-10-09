@@ -199,6 +199,13 @@ struct SignalButton: View {
         let unsafe = live && g.light == .red && sim.isUnsafe(group)
         let count = game.setting("counts") ? (game.monitor.corners[dir]?.groups[group] ?? 0) : 0
         let emergency = game.monitor.emergencyGroups.contains(group) && game.monitor.corners[dir]?.emergency == true
+        let corner = game.monitor.corners[dir]
+        // The wait timer sits on the button that has waited longest at this corner.
+        let longest = game.setting("counts") && corner?.longest == group ? (corner?.groupOldest[group] ?? 0) : nil
+        let angry = sim.level.angry
+        let walkColor = walk ? BoardRenderer.walkColor(group, in: sim).map { Color(hex: $0) } : nil
+        // People cross perpendicular to the road their crosswalk is on.
+        let acrossH = walk && sim.geometry.crosswalks.first { $0.group == group }.map { $0.leg == .N || $0.leg == .S } == true
         let fill: Color = g.light == .green ? Pixel.go : g.light == .yellow ? Pixel.yellow : Pixel.stop
         let rotations: [Direction: Double] = [.N: 0, .E: 90, .S: 180, .W: -90]
         let rotation = walk ? 0 : rotations[dir]!
@@ -211,6 +218,12 @@ struct SignalButton: View {
                     .shadow(color: g.light == .red ? .clear : fill.opacity(0.75), radius: 7)
                 RoundedRectangle(cornerRadius: walk ? 6 : size / 2)
                     .strokeBorder(Color(hex: 0x05040B), lineWidth: 3)
+                if walk {
+                    CrossArrow(horizontal: acrossH)
+                        .stroke(Color(hex: 0x05040B), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                        .frame(width: size * 0.62, height: size * 0.62)
+                        .offset(x: acrossH ? 0 : size * 0.2, y: acrossH ? size * 0.24 : 0)
+                }
                 ZStack {
                     GlyphShape(kind: walk ? "walk" : g.move)
                         .stroke(Color(hex: 0x05040B), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
@@ -218,12 +231,23 @@ struct SignalButton: View {
                 }
                 .frame(width: size / 2, height: size / 2)
                 .rotationEffect(.degrees(rotation))
+                .offset(x: walk && !acrossH ? -size * 0.08 : 0, y: walk && acrossH ? -size * 0.06 : 0)
                 if game.setting("colorblind") { ColorBlindMark(light: g.light).frame(width: 9, height: 9).offset(x: size / 2 - 7, y: -size / 2 + 7) }
                 if unsafe {
                     Text("!").font(Pixel.font(8)).foregroundColor(.white)
                         .frame(width: 16, height: 16).background(Pixel.stop).cornerRadius(2)
                         .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color(hex: 0x05040B), lineWidth: 1))
                         .offset(x: -size / 2 + 2, y: -size / 2 + 2)
+                }
+                if let w = longest {
+                    let bad = w > angry, warn = w > angry * 0.5
+                    Text("\(Int(w))s").font(Pixel.term(15))
+                        .foregroundColor(bad ? .white : warn ? Color(hex: 0x05040B) : Pixel.text)
+                        .frame(minHeight: 16).padding(.horizontal, 3)
+                        .background(bad ? Pixel.stop : warn ? Pixel.yellow : Color(hex: 0x05040B))
+                        .cornerRadius(2)
+                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(bad ? Color.white : Pixel.edge, lineWidth: 1))
+                        .offset(x: -size / 2 + 6, y: size / 2 - 4)
                 }
                 if count > 0 {
                     Text("\(count)").font(Pixel.term(15)).foregroundColor(Color(hex: 0x05040B))
@@ -232,13 +256,37 @@ struct SignalButton: View {
                 }
             }
             .frame(width: size, height: size)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(walkColor ?? .clear, lineWidth: 3).padding(-3))
             .overlay(RoundedRectangle(cornerRadius: walk ? 9 : size / 2 + 3).stroke(Color.white, lineWidth: emergency ? 3 : 0).padding(-4))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!live || g.light == .yellow)
         .accessibilityLabel(walk ? "Walk across \(g.label)" : "\(dir.name) \(g.move == "L" ? "left turn" : g.move == "A" ? "all lanes" : "straight and right")")
-        .accessibilityValue(g.light == .green ? "Green" : g.light == .yellow ? "Yellow" : unsafe ? "Red, not safe yet" : "Red")
+        .accessibilityValue((g.light == .green ? "Green" : g.light == .yellow ? "Yellow" : unsafe ? "Red, not safe yet" : "Red")
+                            + (longest.map { ", longest wait \(Int($0)) seconds" } ?? ""))
+    }
+}
+
+/// A double-headed arrow: the way people walk over a walk button's crosswalks.
+struct CrossArrow: Shape {
+    let horizontal: Bool
+
+    func path(in r: CGRect) -> SwiftUI.Path {
+        var p = SwiftUI.Path()
+        let h: CGFloat = r.width * 0.16
+        if horizontal {
+            let y = r.midY
+            p.move(to: CGPoint(x: r.minX, y: y)); p.addLine(to: CGPoint(x: r.maxX, y: y))
+            p.move(to: CGPoint(x: r.minX + h, y: y - h)); p.addLine(to: CGPoint(x: r.minX, y: y)); p.addLine(to: CGPoint(x: r.minX + h, y: y + h))
+            p.move(to: CGPoint(x: r.maxX - h, y: y - h)); p.addLine(to: CGPoint(x: r.maxX, y: y)); p.addLine(to: CGPoint(x: r.maxX - h, y: y + h))
+        } else {
+            let x = r.midX
+            p.move(to: CGPoint(x: x, y: r.minY)); p.addLine(to: CGPoint(x: x, y: r.maxY))
+            p.move(to: CGPoint(x: x - h, y: r.minY + h)); p.addLine(to: CGPoint(x: x, y: r.minY)); p.addLine(to: CGPoint(x: x + h, y: r.minY + h))
+            p.move(to: CGPoint(x: x - h, y: r.maxY - h)); p.addLine(to: CGPoint(x: x, y: r.maxY)); p.addLine(to: CGPoint(x: x + h, y: r.maxY - h))
+        }
+        return p
     }
 }
 
@@ -310,7 +358,7 @@ struct SignalSet: View {
         .shadow(color: busiest ? Pixel.yellow.opacity(0.55) : .clear, radius: 8)
 
         let waitBg: Color = corner.level == "bad" ? Pixel.stop : corner.level == "warn" ? Pixel.yellow : Color(hex: 0x0A0814).opacity(0.9)
-        let wait = Text("\(corner.total)\(corner.oldest >= 1 ? " · \(Int(corner.oldest))S" : "")")
+        let wait = Text(fit.column ? "\(corner.total)" : "\(corner.total) WAITING")
             .font(Pixel.term(fit.column ? 15 : 17))
             .foregroundColor(corner.level == "bad" ? .white : corner.level == "warn" ? Color(hex: 0x05040B) : Pixel.text)
             .padding(.horizontal, 5).padding(.vertical, 1)

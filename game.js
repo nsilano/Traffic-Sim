@@ -579,7 +579,7 @@
     state.particles = []; state.flashes = []; state.popups = []; state.banners = [];
     state.score = 0; state.streak = 0; state.mult = 1; state.minPatience = 100; state.waitSum = 0; state.worstWait = 0;
     for (const g of state.groups) g.passed = 0;
-    for (const c of state.cars) c.wait = 0;
+    for (const c of state.cars) { c.wait = 0; c.lightWait = 0; }
     for (const p of state.peds) p.wait = 0;
   }
 
@@ -741,7 +741,7 @@
       // How readily this driver runs a yellow, 0 (never) to 1.
       nerve: beater ? 1 : between(NERVE[type]),
       habit, bumped: false,
-      wait: 0, commit: -1, decided: -1,
+      wait: 0, lightWait: 0, commit: -1, decided: -1,
       hold: 0, holdKind: null, stoppedFor: 0, starting: false,
     };
   }
@@ -981,7 +981,12 @@
       if (mustStop && before <= p.stopS && c.s > p.stopS) { c.s = p.stopS; c.v = 0; }
       if (before <= p.stopS && c.s > p.stopS && g.state === 'green') g.passed++;
 
-      if (c.v < 4 && c.s <= p.stopS + 1 && !mistakeLanes.has(p.laneKey)) c.wait += dt;
+      if (c.v < 4 && c.s <= p.stopS + 1 && !mistakeLanes.has(p.laneKey)) {
+        c.wait += dt;
+        // Patience only runs for the driver at the front of the line, and starts over once
+        // they get moving: a car that pulls up but misses the light isn't the player's fault.
+        if (!lead || lead.s > lead.path.stopS + 1) c.lightWait += dt;
+      } else if (c.v > 5) { c.lightWait = 0; c.honked = false; }
     }
 
     // Cars that left the map count as cleared.
@@ -1308,7 +1313,7 @@
         if (sp.timer > 0) continue;
         sp.timer = expRand(1 / cap);
         if (Math.random() * cap >= now) continue;
-        const waiting = state.peds.filter(p => p.cw === sp.cw && p.dir === sp.dir && p.state !== 'crossing').length;
+        const waiting = state.peds.filter(p => p.cw === sp.cw && p.dir === sp.dir && (p.state === 'arriving' || p.state === 'waiting')).length;
         if (waiting >= 6) continue;
         const start = sp.dir > 0 ? sp.cw.road0 - 9 : sp.cw.road1 + 9;
         const ped = {
@@ -1324,11 +1329,15 @@
     }
     for (const ped of state.peds) {
       const g = state.groups[ped.cw.group];
-      if (ped.state === 'arriving') {
-        // Walk along the sidewalk to the corner, then wait there.
+      if (ped.state === 'arriving' || ped.state === 'leaving') {
+        // Walk along the sidewalk to the corner and wait there, or (across the road)
+        // on along the sidewalk and off the map.
         ped.routeAt += ped.speed * 1.1 * dt;
         ped.phase += dt * 10;
-        if (ped.routeAt >= ped.route.len) ped.state = 'waiting';
+        if (ped.routeAt >= ped.route.len) {
+          if (ped.state === 'leaving') ped.gone = true;
+          else ped.state = 'waiting';
+        }
         continue;
       }
       if (ped.state === 'waiting') {
@@ -1356,7 +1365,30 @@
         }
       }
     }
-    state.peds = state.peds.filter(p => !(p.state === 'crossing' && (p.dir > 0 ? p.v > p.cw.road1 + 10 : p.v < p.cw.road0 - 10)));
+    for (const p of state.peds) {
+      if (p.state === 'crossing' && (p.dir > 0 ? p.v > p.cw.road1 + 10 : p.v < p.cw.road0 - 10)) {
+        p.state = 'leaving';
+        p.route = exitRoute(p);
+        p.routeAt = 0;
+      }
+    }
+    state.peds = state.peds.filter(p => !p.gone);
+  }
+
+  // The way out once across: along the sidewalk on the far side and off the map.
+  function exitRoute(ped) {
+    const cw = ped.cw, k = cw.leg;
+    const { d, r } = DIRS[k];
+    const P = (u, v) => ({ x: CX + d.x * u + r.x * v, y: CY + d.y * u + r.y * v });
+    const { far, R, L0, L1, m0, m1 } = legDims(k);
+    const half = SIDEWALK / 2;
+    const u = cw.uc + ped.du;
+    const pts = ped.dir > 0
+      ? [P(u, ped.v), P(u - 10, R + half), P(far - 10, R + half)]
+      : [P(u, ped.v), P(u - 10, -L0 - half), P(m0, -L0 - half), P(m1, -L1 - half), P(far - 10, -L1 - half)];
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i], pts[i - 1]));
+    return { pts, cum, len: cum[cum.length - 1] };
   }
 
   // The way a pedestrian walks in: from off the map along the sidewalk beside
@@ -1576,7 +1608,7 @@
 
   // ---- Patience, busy groups, win/lose ----
   const hasLimits = () => !state.freeplay; // freeplay never ends the game
-  const isAngry = c => c.wait > state.level.angry && c.s <= c.path.stopS + 1;
+  const isAngry = c => c.lightWait > state.level.angry && c.s <= c.path.stopS + 1;
 
   function updateStatus(dt) {
     for (const g of state.groups) g.busy = 0;
@@ -2369,7 +2401,7 @@
     const showAngry = !state.freeplay;
     for (const ped of state.peds) {
       const crossing = ped.state === 'crossing';
-      const arriving = ped.state === 'arriving';
+      const arriving = ped.state === 'arriving' || ped.state === 'leaving';
       const walk = arriving ? routePoint(ped.route, ped.routeAt) : null;
       const at = arriving ? walk : crossing ? cwPoint(ped.cw, ped.v, ped.du) : cwPoint(ped.cw, ped.start - ped.dir * ped.back, ped.du * 0.7);
       const { r } = DIRS[ped.cw.leg];
@@ -2390,7 +2422,7 @@
       g.fillStyle = '#3a2e26';
       g.beginPath(); g.arc(0.3, 0, 2.4, 0, Math.PI * 2); g.fill();
       g.restore();
-      if (showAngry && !crossing && ped.wait > state.level.angry && Math.sin(state.pulse * 10) > -0.3) {
+      if (showAngry && ped.state === 'waiting' && ped.wait > state.level.angry && Math.sin(state.pulse * 10) > -0.3) {
         g.fillStyle = '#ff4d4f';
         g.font = '800 10px Archivo, system-ui, sans-serif';
         g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -2566,10 +2598,10 @@
   function drawWaitRing(g, c) {
     if (state.freeplay) return; // no patience in freeplay
     const angryAfter = state.level.angry;
-    if (c.wait <= angryAfter * 0.3 || c.s > c.path.stopS + 1) return;
+    if (c.lightWait <= angryAfter * 0.3 || c.s > c.path.stopS + 1) return;
     const at = pointAt(c.path, c.s - c.len / 2);
     if (underOverpass(at.x, at.y)) return;
-    const frac = Math.min(1, c.wait / angryAfter);
+    const frac = Math.min(1, c.lightWait / angryAfter);
     g.lineWidth = 2.5;
     g.strokeStyle = 'rgba(0, 0, 0, 0.45)';
     g.beginPath(); g.arc(at.x, at.y, 8, 0, Math.PI * 2); g.stroke();
@@ -2907,7 +2939,7 @@
       const m = by[p.dir];
       m.total++;
       m.groups[p.group] = (m.groups[p.group] || 0) + 1;
-      m.oldest = Math.max(m.oldest, c.wait);
+      m.oldest = Math.max(m.oldest, c.lightWait);
     }
     for (const k of DIR_KEYS) {
       const sp = state.spawners[k];
