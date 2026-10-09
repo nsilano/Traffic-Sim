@@ -8,6 +8,10 @@ settings:
   base:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
+packages:
+  # The game engine (rules, simulation, drawing), built and tested on its own in core/.
+  GridlockCore:
+    path: ../core
 targets:
   TrafficSim:
     type: application
@@ -17,6 +21,11 @@ targets:
       - name: Copy the game in
         script: python3 "$SRCROOT/build-game.py"
         basedOnDependencyAnalysis: false
+    dependencies:
+      - package: GridlockCore
+        product: GridlockCore
+      - package: GridlockCore
+        product: GridlockRender
     sources:
       - path: TrafficSim
         excludes: ["game/**", "Info.plist"]

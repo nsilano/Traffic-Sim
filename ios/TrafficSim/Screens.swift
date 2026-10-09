@@ -152,7 +152,7 @@ private func formatted(_ n: Int) -> String {
 // MARK: - Levels
 
 struct LevelsScreen: View {
-    @ObservedObject var bridge: GameBridge
+    @ObservedObject var bridge: GameHost
     let onBack: () -> Void
     let onFreeplay: () -> Void
 
@@ -219,7 +219,7 @@ struct LevelsScreen: View {
 // MARK: - Records
 
 struct RecordsScreen: View {
-    @ObservedObject var bridge: GameBridge
+    @ObservedObject var bridge: GameHost
     let onBack: () -> Void
 
     var body: some View {
@@ -276,9 +276,10 @@ struct RecordsScreen: View {
 // MARK: - Settings
 
 struct SettingsScreen: View {
-    @ObservedObject var bridge: GameBridge
+    @ObservedObject var bridge: GameHost
     let version: String
     let onBack: () -> Void
+    @AppStorage("classicEngine") private var classicEngine = false
     @State private var confirmBests = false
     @State private var confirmAll = false
 
@@ -330,6 +331,23 @@ struct SettingsScreen: View {
                     }
                 }
             }
+            PixelSection(title: "Testing", color: Pixel.dim) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Classic engine").font(Pixel.term(24)).foregroundColor(Pixel.text)
+                        Text("Run the original web version of the game, to compare. Its progress is kept separately.")
+                            .font(Pixel.term(18)).foregroundColor(Pixel.dim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    PixelSwitch(on: classicEngine, label: "Classic engine") {
+                        bridge.feedback()
+                        classicEngine.toggle()
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
             VStack(alignment: .leading, spacing: 10) {
                 Text("DANGER ZONE").font(Pixel.font(9)).foregroundColor(Pixel.stop).shadow(color: Pixel.stop.opacity(0.7), radius: 6)
                 PixelButton(title: "Reset freeplay bests", color: Color(hex: 0x1A1030), textColor: Pixel.text, shade: Pixel.deep) {
@@ -360,7 +378,7 @@ struct SettingsScreen: View {
 // MARK: - Freeplay setup
 
 struct FreeplayScreen: View {
-    @ObservedObject var bridge: GameBridge
+    @ObservedObject var bridge: GameHost
     let onBack: () -> Void
     @State private var config = FreeplayConfig()
     @State private var loaded = false

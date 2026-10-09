@@ -81,45 +81,61 @@ struct MenuSummary: Equatable {
     var scanlines = true
 }
 
-/// The two-way link between the native app and the game running in the web view.
-///
-/// The game posts `{type: "screen", menu: Bool, ...}` on the "bridge" channel whenever
-/// the menu appears or something covers it, and "go"/"stop" on the "haptic" channel when
-/// the player switches a light. The app sends menu choices in with `Gridlock.command(...)`.
-final class GameBridge: NSObject, ObservableObject, WKScriptMessageHandler {
+/// What the native screens (menu, levels, records, settings, freeplay, game cards) talk to.
+/// Two engines provide it: the web game (GameBridge) and the native one (NativeGame).
+class GameHost: NSObject, ObservableObject {
     @Published var showMenu = true
     @Published var summary = MenuSummary()
     @Published var data = GameData()
     /// The game card showing over the board, if any.
     @Published var card: GameCard?
-    /// A native screen the game asked to open over the menu (levels or freeplay).
+    /// A native screen to open over the menu (levels or freeplay).
     @Published var openRequest: String?
 
-    weak var webView: WKWebView?
-    private var ready = false
-    private var pending: [String] = []
-
+    let sounds = SoundPlayer()
     private let light = UIImpactFeedbackGenerator(style: .light)
     private let firm = UIImpactFeedbackGenerator(style: .medium)
     private let tick = UISelectionFeedbackGenerator()
-    private let sounds = SoundPlayer()
 
-    /// Settings → Sound effects, as the game last reported it.
-    private var soundOn: Bool { data.settings.first(where: { $0.key == "sound" })?.on ?? true }
+    /// Settings → Sound effects and Haptics, as last reported.
+    var soundOn: Bool { data.settings.first(where: { $0.key == "sound" })?.on ?? true }
+    var hapticsOn: Bool { data.settings.first(where: { $0.key == "haptics" })?.on ?? true }
 
-    /// A command for the game: play, levels, records, settings, help, or with a value:
-    /// pick (a level index), freeplay-start (a FreeplayConfig), setting (a key),
-    /// reset-bests, reset-all.
-    func command(_ name: String) { send(name, argument: "null") }
-    func command(_ name: String, level: Int) { send(name, argument: String(level)) }
-    func command(_ name: String, key: String) { send(name, argument: Self.json(key)) }
-    func command(_ name: String, freeplay: FreeplayConfig) { send(name, argument: Self.json(freeplay)) }
+    /// A command: play, levels, records, settings, help, or with a value: pick (a level index),
+    /// freeplay-start (a FreeplayConfig), setting (a key), reset-bests, reset-all, card (an action).
+    func command(_ name: String) {}
+    func command(_ name: String, level: Int) {}
+    func command(_ name: String, key: String) {}
+    func command(_ name: String, freeplay: FreeplayConfig) {}
 
     /// The tick and blip for any native button press.
     func feedback() {
         tick.selectionChanged()
         if soundOn { sounds.play("tap") }
     }
+
+    /// A tap you feel when a light switches: "go" or "stop".
+    func haptic(_ kind: String) {
+        let generator = kind == "stop" ? firm : light
+        generator.impactOccurred()
+        generator.prepare()
+    }
+}
+
+/// The two-way link between the native app and the game running in the web view.
+///
+/// The game posts `{type: "screen", menu: Bool, ...}` on the "bridge" channel whenever
+/// the menu appears or something covers it, and "go"/"stop" on the "haptic" channel when
+/// the player switches a light. The app sends menu choices in with `Gridlock.command(...)`.
+final class GameBridge: GameHost, WKScriptMessageHandler {
+    weak var webView: WKWebView?
+    private var ready = false
+    private var pending: [String] = []
+
+    override func command(_ name: String) { send(name, argument: "null") }
+    override func command(_ name: String, level: Int) { send(name, argument: String(level)) }
+    override func command(_ name: String, key: String) { send(name, argument: Self.json(key)) }
+    override func command(_ name: String, freeplay: FreeplayConfig) { send(name, argument: Self.json(freeplay)) }
 
     private func send(_ name: String, argument: String) {
         feedback()
@@ -142,9 +158,7 @@ final class GameBridge: NSObject, ObservableObject, WKScriptMessageHandler {
         case "sound":
             if let name = message.body as? String { sounds.play(name) }
         case "haptic":
-            let generator = (message.body as? String) == "stop" ? firm : light
-            generator.impactOccurred()
-            generator.prepare()
+            haptic((message.body as? String) ?? "go")
         case "bridge":
             guard let body = message.body as? [String: Any], body["type"] as? String == "screen" else { return }
             var s = summary

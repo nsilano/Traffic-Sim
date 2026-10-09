@@ -29,7 +29,7 @@ extension Color {
 /// The native main menu: a night street in pixel art, a traffic light swaying on its
 /// wire, and an arcade-style list. Choices go to the game through the bridge.
 struct MenuView: View {
-    @ObservedObject var bridge: GameBridge
+    @ObservedObject var bridge: GameHost
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selected = 0
     /// The native screen open over the menu, if any: levels, records, settings, help or freeplay.

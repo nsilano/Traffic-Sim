@@ -3,7 +3,7 @@ import SwiftUI
 /// A game card (level intro, pause, results) drawn natively over the live board.
 /// Its buttons press the matching button on the game's own card.
 struct GameCardView: View {
-    @ObservedObject var bridge: GameBridge
+    @ObservedObject var bridge: GameHost
     let card: GameCard
 
     var body: some View {

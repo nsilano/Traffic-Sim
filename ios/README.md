@@ -26,9 +26,12 @@ edit `CFBundleDisplayName` in `project.yml`.
 
 | Path | What it is |
 |---|---|
-| `TrafficSim/TrafficSimApp.swift` | the app: the game full screen, with the native main menu over it while you're on the menu |
-| `TrafficSim/GameView.swift` | the web view that runs the bundled game offline |
-| `TrafficSim/GameBridge.swift` | the link between the app and the game: menu choices go in, menu state and haptic taps come out |
+| `TrafficSim/TrafficSimApp.swift` | the app: picks the engine (native, or the web version under Settings → Classic engine) and puts the native screens over it |
+| `TrafficSim/NativeGame.swift` | the native engine host: progress and settings (saved on the device, imported once from the web version), shifts, game cards, the game loop |
+| `TrafficSim/NativeGameView.swift` | the native game screen: the board (drawn by GridlockRender), the signal sets on it, the HUD and the dock |
+| `TrafficSim/LegacyImport.swift` | the one-time import of a player's progress from the web version's storage |
+| `TrafficSim/GameView.swift` | the web view that runs the bundled web game (Classic engine, and the progress import) |
+| `TrafficSim/GameBridge.swift` | `GameHost`, what the native screens talk to, and `GameBridge`, its web-game version |
 | `TrafficSim/MenuView.swift` | the native Pixel City main menu (SwiftUI) |
 | `TrafficSim/Screens.swift` | native Levels, Records, Settings, Freeplay setup and How to play screens |
 | `TrafficSim/GameCardView.swift` | native level intro, pause and results cards over the live game |
@@ -69,3 +72,10 @@ match exactly.
 
 Until they exist, Game Center quietly ignores the reports. TestFlight builds use Game Center's
 sandbox, so test scores don't reach the live leaderboards.
+
+## The engine
+
+The game itself (rules, traffic, drawing) is the `core/` Swift package (GridlockCore and
+GridlockRender), linked into the app through `project.yml`. It has its own **Core** workflow that
+builds and tests it on every change without making a TestFlight build; changes there reach the
+app with its next TestFlight build.
