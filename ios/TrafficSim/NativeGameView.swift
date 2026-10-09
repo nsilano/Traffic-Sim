@@ -156,10 +156,10 @@ struct AnchorLayout: Layout {
 struct GlyphShape: Shape {
     let kind: String
 
-    func path(in rect: CGRect) -> Path {
+    func path(in rect: CGRect) -> SwiftUI.Path {
         let s = rect.width / 20
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * s, y: rect.minY + y * s) }
-        var path = Path()
+        var path = SwiftUI.Path()
         switch kind {
         case "L":
             path.move(to: p(14, 17)); path.addLine(to: p(14, 11))
@@ -254,8 +254,8 @@ struct ColorBlindMark: View {
 }
 
 struct Triangle: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
+    func path(in r: CGRect) -> SwiftUI.Path {
+        var p = SwiftUI.Path()
         p.move(to: CGPoint(x: r.midX, y: r.minY))
         p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
         p.addLine(to: CGPoint(x: r.minX, y: r.maxY))
