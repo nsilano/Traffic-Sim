@@ -1,0 +1,19 @@
+# Builds and tests the Swift game engine (core/) on every change to it.
+# It doesn't build the app or upload anything, so it never makes a TestFlight build.
+name: Core
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['core/**', '.github/workflows/core.yml']
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test GridlockCore
+        working-directory: core
+        run: swift test 2>&1 | tail -60
+        shell: bash -o pipefail {0}

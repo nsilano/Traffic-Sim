@@ -26,7 +26,8 @@ native SwiftUI in the Pixel City style (Press Start 2P and VT323 registered as a
   achievements (the owner creates them in App Store Connect). Retire the web link.
 
 ## Stage 2: Swift + SpriteKit game engine
-Port the engine so no web view is left. Each step is checked against the JS version with the same
+Port the engine so no web view is left. The rules and simulation live in `core/` (GridlockCore),
+a UI-free Swift package that GitHub builds and tests on every change without a TestFlight build. Each step is checked against the JS version with the same
 seeds and scripted players before it replaces anything.
 
 - **2a. Model.** Levels, geometry (lanes, paths, conflicts, crosswalks, overpass), constants.
@@ -41,5 +42,6 @@ seeds and scripted players before it replaces anything.
 |---|---|
 | 0 | done |
 | 1a–1c | done (build 16) |
-| 1d | sound and Game Center built; Game Center needs the App Store Connect setup in ios/README.md |
-| 2a–2e | not started |
+| 1d | done (build 17); Game Center needs the App Store Connect setup in ios/README.md |
+| 2a | built: `core/` package, levels shared as JSON, geometry checked against the JS game |
+| 2b–2e | not started |

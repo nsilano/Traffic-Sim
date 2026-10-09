@@ -1,0 +1,604 @@
+[
+ {
+  "name": "First Shift",
+  "street": "Main St & 1st Ave",
+  "desc": "1 lane each way · 2 switches",
+  "layout": "Two-lane crossing",
+  "lanes": {
+   "NS": [
+    "TR"
+   ],
+   "EW": [
+    "TR"
+   ]
+  },
+  "groups": [
+   {
+    "label": "Main St",
+    "dirs": [
+     "N",
+     "S"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "1st Ave",
+    "dirs": [
+     "E",
+     "W"
+    ],
+    "move": "T"
+   }
+  ],
+  "goal": 20,
+  "rate": {
+   "NS": [
+    0.13,
+    0.2
+   ],
+   "EW": [
+    0.13,
+    0.2
+   ]
+  },
+  "left": 0,
+  "right": 0.15,
+  "angry": 9,
+  "rush": false,
+  "intro": "The signal buttons sit next to the cars they control, and the arrows show which way those cars go. Turn one street red before you turn the other green. If both are green, cars will crash.",
+  "tip": "After you switch a street off, wait for the yellow to end and for the last cars to clear the box. Cars with an amber lightning bolt speed up to beat a yellow, so watch for them before you switch."
+ },
+ {
+  "name": "Turn Lanes",
+  "street": "Main St & 1st Ave",
+  "desc": "Left-turn lanes · 4 switches",
+  "layout": "Left-turn lanes",
+  "lanes": {
+   "NS": [
+    "L",
+    "TR"
+   ],
+   "EW": [
+    "L",
+    "TR"
+   ]
+  },
+  "groups": [
+   {
+    "label": "Main St",
+    "dirs": [
+     "N",
+     "S"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Main St",
+    "dirs": [
+     "N",
+     "S"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "1st Ave",
+    "dirs": [
+     "E",
+     "W"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "1st Ave",
+    "dirs": [
+     "E",
+     "W"
+    ],
+    "move": "L"
+   }
+  ],
+  "goal": 30,
+  "rate": {
+   "NS": [
+    0.14,
+    0.22
+   ],
+   "EW": [
+    0.14,
+    0.22
+   ]
+  },
+  "left": 0.3,
+  "right": 0.12,
+  "angry": 15,
+  "rush": false,
+  "intro": "Both streets now have a left-turn lane with its own arrow. Opposite left turns can go at the same time. A left arrow cannot run with the same street’s straight traffic.",
+  "tip": "A signal button with a red ! would conflict with traffic that is still moving."
+ },
+ {
+  "name": "Crosswalks",
+  "street": "Main St & 1st Ave",
+  "desc": "Pedestrians · 6 switches",
+  "layout": "Turn lanes by the park",
+  "lanes": {
+   "NS": [
+    "L",
+    "TR"
+   ],
+   "EW": [
+    "L",
+    "TR"
+   ]
+  },
+  "groups": [
+   {
+    "label": "Main St",
+    "dirs": [
+     "N",
+     "S"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Main St",
+    "dirs": [
+     "N",
+     "S"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "1st Ave",
+    "dirs": [
+     "E",
+     "W"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "1st Ave",
+    "dirs": [
+     "E",
+     "W"
+    ],
+    "move": "L"
+   }
+  ],
+  "walks": [
+   {
+    "label": "Main St",
+    "legs": [
+     "N",
+     "S"
+    ]
+   },
+   {
+    "label": "1st Ave",
+    "legs": [
+     "E",
+     "W"
+    ]
+   }
+  ],
+  "peds": 0.05,
+  "decor": [
+   "trees"
+  ],
+  "goal": 35,
+  "rate": {
+   "NS": [
+    0.14,
+    0.22
+   ],
+   "EW": [
+    0.14,
+    0.22
+   ]
+  },
+  "left": 0.3,
+  "right": 0.12,
+  "angry": 15,
+  "rush": false,
+  "intro": "A leafy street: tree canopies hang over the outer lanes, so watch for cars slipping out from under them. People now wait at the corners. Each crosswalk has a Walk button with a walking figure. Turning cars stop for people in the crosswalk, but straight-through traffic on green does not.",
+  "tip": "Let people cross a street while that street is red. Walk across Main St runs safely with 1st Ave straight traffic, and the flashing don’t-walk gives the last walkers time to finish."
+ },
+ {
+  "name": "One Way",
+  "street": "Main St & 2nd Ave",
+  "desc": "One-way avenue · 5 switches",
+  "layout": "One-way avenue, roadworks",
+  "lanes": {
+   "N": [
+    "L",
+    "T",
+    "T"
+   ],
+   "S": [
+    "T",
+    "T",
+    "TR"
+   ],
+   "E": [],
+   "W": [
+    "L",
+    "T",
+    "TR"
+   ]
+  },
+  "groups": [
+   {
+    "label": "Main St",
+    "dirs": [
+     "N",
+     "S"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Main St",
+    "dirs": [
+     "N"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "2nd Ave",
+    "dirs": [
+     "W"
+    ],
+    "move": "A"
+   }
+  ],
+  "walks": [
+   {
+    "label": "Main St",
+    "legs": [
+     "N",
+     "S"
+    ]
+   },
+   {
+    "label": "2nd Ave",
+    "legs": [
+     "E",
+     "W"
+    ]
+   }
+  ],
+  "peds": 0.05,
+  "decor": [
+   "works",
+   "shadows"
+  ],
+  "goal": 45,
+  "rate": {
+   "NS": [
+    0.18,
+    0.28
+   ],
+   "EW": [
+    0.26,
+    0.36
+   ]
+  },
+  "left": 0.25,
+  "right": 0.15,
+  "angry": 15,
+  "rush": false,
+  "intro": "Road works and tall buildings make this one hard to read. 2nd Ave is a one-way street heading west, with three lanes that all move on one switch. Northbound Main St can turn left onto it; southbound can only turn right.",
+  "tip": "The avenue carries the most traffic. Its left turns cut across southbound Main St, so the avenue and Main St can never run together."
+ },
+ {
+  "name": "Harbor Merge",
+  "street": "Main St & Harbor Rd",
+  "desc": "T-junction, lane drop · 5 switches",
+  "layout": "T-junction by the harbor",
+  "lanes": {
+   "N": [
+    "T",
+    "TR"
+   ],
+   "S": [
+    "L",
+    "T"
+   ],
+   "E": [],
+   "W": [
+    "L",
+    "R"
+   ]
+  },
+  "out": {
+   "N": 1,
+   "S": 2,
+   "E": 1,
+   "W": 0
+  },
+  "groups": [
+   {
+    "label": "Main St",
+    "dirs": [
+     "N",
+     "S"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Main St",
+    "dirs": [
+     "S"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "Harbor Rd",
+    "dirs": [
+     "W"
+    ],
+    "move": "A"
+   }
+  ],
+  "walks": [
+   {
+    "label": "Main St",
+    "legs": [
+     "N",
+     "S"
+    ]
+   },
+   {
+    "label": "Harbor Rd",
+    "legs": [
+     "W"
+    ]
+   }
+  ],
+  "peds": 0.05,
+  "decor": [
+   "harbor"
+  ],
+  "night": true,
+  "goal": 45,
+  "rate": {
+   "NS": [
+    0.2,
+    0.3
+   ],
+   "EW": [
+    0.2,
+    0.3
+   ]
+  },
+  "left": 0.35,
+  "right": 0.12,
+  "angry": 15,
+  "rush": false,
+  "intro": "Night shift by the water: you’ll mostly see headlights. Harbor Rd ends at Main St, so its drivers can only turn. North of the junction, Main St drops to one lane: the two northbound lanes and cars turning right off Harbor Rd all merge.",
+  "tip": "When the merge backs up, drivers will not enter the junction until there is room on the other side. Long greens for northbound traffic stop helping once the merge is full."
+ },
+ {
+  "name": "Split Phases",
+  "street": "Main St & 3rd Ave",
+  "desc": "Split control, lane drops · 8 switches",
+  "layout": "Split control, lane drops",
+  "lanes": {
+   "NS": [
+    "L",
+    "T",
+    "TR"
+   ],
+   "EW": [
+    "L",
+    "T",
+    "TR"
+   ]
+  },
+  "out": {
+   "E": 2,
+   "W": 2
+  },
+  "median": {
+   "EW": 28
+  },
+  "groups": [
+   {
+    "label": "Northbound",
+    "dirs": [
+     "N"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Northbound",
+    "dirs": [
+     "N"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "Southbound",
+    "dirs": [
+     "S"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Southbound",
+    "dirs": [
+     "S"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "3rd Ave",
+    "dirs": [
+     "E",
+     "W"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "3rd Ave",
+    "dirs": [
+     "E",
+     "W"
+    ],
+    "move": "L"
+   }
+  ],
+  "walks": [
+   {
+    "label": "Main St",
+    "legs": [
+     "N",
+     "S"
+    ]
+   },
+   {
+    "label": "3rd Ave",
+    "legs": [
+     "E",
+     "W"
+    ]
+   }
+  ],
+  "peds": 0.06,
+  "goal": 60,
+  "rate": {
+   "NS": [
+    0.24,
+    0.34
+   ],
+   "EW": [
+    0.18,
+    0.26
+   ]
+  },
+  "left": 0.28,
+  "right": 0.12,
+  "angry": 18,
+  "rush": true,
+  "intro": "3rd Ave is a divided boulevard with a planted median, so the box is wider and left turns take longer. Northbound and southbound Main St have separate controls. 3rd Ave loses a lane on both sides of the junction, so its traffic merges right after crossing. Rush-hour surges start here.",
+  "tip": "Northbound straight with northbound left is safe. Northbound left with southbound straight is not."
+ },
+ {
+  "name": "Downtown Rush",
+  "street": "Main St & Broadway",
+  "desc": "Everything at once · 10 switches",
+  "layout": "Downtown, merge under the overpass",
+  "lanes": {
+   "NS": [
+    "L",
+    "T",
+    "T",
+    "TR"
+   ],
+   "EW": [
+    "L",
+    "T",
+    "TR"
+   ]
+  },
+  "out": {
+   "N": 3
+  },
+  "mergeStart": 100,
+  "mergeLen": 120,
+  "decor": [
+   "overpass",
+   "shadows"
+  ],
+  "groups": [
+   {
+    "label": "Northbound",
+    "dirs": [
+     "N"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Northbound",
+    "dirs": [
+     "N"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "Southbound",
+    "dirs": [
+     "S"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Southbound",
+    "dirs": [
+     "S"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "Eastbound",
+    "dirs": [
+     "E"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Eastbound",
+    "dirs": [
+     "E"
+    ],
+    "move": "L"
+   },
+   {
+    "label": "Westbound",
+    "dirs": [
+     "W"
+    ],
+    "move": "T"
+   },
+   {
+    "label": "Westbound",
+    "dirs": [
+     "W"
+    ],
+    "move": "L"
+   }
+  ],
+  "walks": [
+   {
+    "label": "Main St",
+    "legs": [
+     "N",
+     "S"
+    ]
+   },
+   {
+    "label": "Broadway",
+    "legs": [
+     "E",
+     "W"
+    ]
+   }
+  ],
+  "peds": 0.07,
+  "goal": 80,
+  "rate": {
+   "NS": [
+    0.3,
+    0.42
+   ],
+   "EW": [
+    0.22,
+    0.3
+   ]
+  },
+  "left": 0.28,
+  "right": 0.12,
+  "angry": 18,
+  "rush": true,
+  "intro": "Every direction and turn has its own signal, people cross on both streets, and northbound Main St drops a lane past the junction. An overpass crosses the bottom of the map, so part of the northbound queue is hidden under it.",
+  "tip": "Some combinations across streets are safe too. Watch for the red ! to find the ones that are not."
+ }
+]
