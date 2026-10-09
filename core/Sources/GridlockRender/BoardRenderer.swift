@@ -38,19 +38,6 @@ public final class BoardRenderer {
 
     static let minViewWidth = 400.0
 
-    /// Each walk signal's own colour, shared by its crosswalks on the board and its button, so
-    /// the player can see at a glance which button lets which people go.
-    public static let walkPalette: [UInt32] = [0x3AD7FF, 0xFF6AD5, 0xB48CFF]
-
-    public static func walkColor(_ group: Int, in sim: Simulation) -> UInt32? {
-        let walks = sim.groups.indices.filter { sim.groups[$0].kind == .walk }
-        return walks.firstIndex(of: group).map { walkPalette[$0 % walkPalette.count] }
-    }
-
-    private func walkCSS(_ group: Int) -> String? {
-        Self.walkColor(group, in: sim).map { String(format: "#%06x", $0) }
-    }
-
     /// The board's visible width for a view of this size (points), and its left edge.
     public static func viewSlice(width: Double, height: Double) -> (x0: Double, w: Double) {
         let w = min(World.width, World.width * width / height)
@@ -94,7 +81,6 @@ public final class BoardRenderer {
         if let image = background?.image { g.drawImage(image, sx, sy, size.width, size.height) }
         toView(g, scale, sx, sy)
 
-        drawCrosswalkColors(g)
         drawLamps(g)
         drawPeds(g)
         for c in sim.cars {
@@ -554,22 +540,6 @@ public final class BoardRenderer {
         }
     }
 
-    /// Each crosswalk edged in its walk signal's colour.
-    private func drawCrosswalkColors(_ g: Canvas) {
-        for cw in geo.crosswalks {
-            guard let color = walkCSS(cw.group) else { continue }
-            g.strokeStyle = color
-            g.lineWidth = 2.5
-            g.beginPath()
-            for side in [-1.0, 1.0] {
-                let du = side * (World.crosswalk / 2 + 1.5)
-                let a = cw.point(cw.road0 - 1, du), b = cw.point(cw.road1 + 1, du)
-                g.moveTo(CGFloat(a.x), CGFloat(a.y)); g.lineTo(CGFloat(b.x), CGFloat(b.y))
-            }
-            g.stroke()
-        }
-    }
-
     private func drawWalkSignals(_ g: Canvas) {
         for cw in geo.crosswalks {
             let st = sim.groups[cw.group].light
@@ -579,11 +549,7 @@ public final class BoardRenderer {
                 let x = CGFloat(at.x), y = CGFloat(at.y)
                 g.fillStyle = "#15181c"
                 g.roundRect(x - 6.5, y - 6.5, 13, 13, 3); g.fill()
-                if let color = walkCSS(cw.group) {
-                    g.strokeStyle = color; g.lineWidth = 2
-                } else {
-                    g.strokeStyle = "rgba(255, 255, 255, 0.25)"; g.lineWidth = 0.8
-                }
+                g.strokeStyle = "rgba(255, 255, 255, 0.25)"; g.lineWidth = 0.8
                 g.roundRect(x - 6.5, y - 6.5, 13, 13, 3); g.stroke()
                 if st == .green {
                     g.strokeStyle = "#f2f6f3"; g.fillStyle = "#f2f6f3"; g.lineWidth = 1.4
