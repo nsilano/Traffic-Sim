@@ -203,9 +203,9 @@ struct SignalButton: View {
         // The wait timer sits on the button that has waited longest at this corner.
         let longest = game.setting("counts") && corner?.longest == group ? (corner?.groupOldest[group] ?? 0) : nil
         let angry = sim.level.angry
-        let walkColor = walk ? BoardRenderer.walkColor(group, in: sim).map { Color(hex: $0) } : nil
-        // People cross perpendicular to the road their crosswalk is on.
-        let acrossH = walk && sim.geometry.crosswalks.first { $0.group == group }.map { $0.leg == .N || $0.leg == .S } == true
+        // People cross the north-south road (crosswalks above and below the junction) left
+        // and right, and the east-west road up and down.
+        let acrossH = sim.geometry.crosswalks.contains { $0.group == group && ($0.leg == .N || $0.leg == .S) }
         let fill: Color = g.light == .green ? Pixel.go : g.light == .yellow ? Pixel.yellow : Pixel.stop
         let rotations: [Direction: Double] = [.N: 0, .E: 90, .S: 180, .W: -90]
         let rotation = walk ? 0 : rotations[dir]!
@@ -219,19 +219,13 @@ struct SignalButton: View {
                 RoundedRectangle(cornerRadius: walk ? 6 : size / 2)
                     .strokeBorder(Color(hex: 0x05040B), lineWidth: 3)
                 if walk {
-                    CrossArrow(horizontal: acrossH)
-                        .stroke(Color(hex: 0x05040B), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                        .frame(width: size * 0.62, height: size * 0.62)
-                        .offset(x: acrossH ? 0 : size * 0.2, y: acrossH ? size * 0.24 : 0)
-                }
-                ZStack {
-                    GlyphShape(kind: walk ? "walk" : g.move)
+                    WalkIcon(horizontal: acrossH).frame(width: size * 0.7, height: size * 0.7)
+                } else {
+                    GlyphShape(kind: g.move)
                         .stroke(Color(hex: 0x05040B), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    if walk { Circle().fill(Color(hex: 0x05040B)).frame(width: size * 0.19, height: size * 0.19).offset(x: size * 0.075, y: -size * 0.32) }
+                        .frame(width: size / 2, height: size / 2)
+                        .rotationEffect(.degrees(rotation))
                 }
-                .frame(width: size / 2, height: size / 2)
-                .rotationEffect(.degrees(rotation))
-                .offset(x: walk && !acrossH ? -size * 0.08 : 0, y: walk && acrossH ? -size * 0.06 : 0)
                 if game.setting("colorblind") { ColorBlindMark(light: g.light).frame(width: 9, height: 9).offset(x: size / 2 - 7, y: -size / 2 + 7) }
                 if unsafe {
                     Text("!").font(Pixel.font(8)).foregroundColor(.white)
@@ -256,7 +250,6 @@ struct SignalButton: View {
                 }
             }
             .frame(width: size, height: size)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(walkColor ?? .clear, lineWidth: 3).padding(-3))
             .overlay(RoundedRectangle(cornerRadius: walk ? 9 : size / 2 + 3).stroke(Color.white, lineWidth: emergency ? 3 : 0).padding(-4))
             .contentShape(Rectangle())
         }
@@ -268,25 +261,45 @@ struct SignalButton: View {
     }
 }
 
-/// A double-headed arrow: the way people walk over a walk button's crosswalks.
-struct CrossArrow: Shape {
+/// A walk button's picture: a walking figure and a double arrow for the way people cross,
+/// ↔ (figure above the arrow) or ↕ (figure beside it), laid out in a 20 × 20 box.
+struct WalkIcon: View {
     let horizontal: Bool
 
-    func path(in r: CGRect) -> SwiftUI.Path {
-        var p = SwiftUI.Path()
-        let h: CGFloat = r.width * 0.16
-        if horizontal {
-            let y = r.midY
-            p.move(to: CGPoint(x: r.minX, y: y)); p.addLine(to: CGPoint(x: r.maxX, y: y))
-            p.move(to: CGPoint(x: r.minX + h, y: y - h)); p.addLine(to: CGPoint(x: r.minX, y: y)); p.addLine(to: CGPoint(x: r.minX + h, y: y + h))
-            p.move(to: CGPoint(x: r.maxX - h, y: y - h)); p.addLine(to: CGPoint(x: r.maxX, y: y)); p.addLine(to: CGPoint(x: r.maxX - h, y: y + h))
-        } else {
-            let x = r.midX
-            p.move(to: CGPoint(x: x, y: r.minY)); p.addLine(to: CGPoint(x: x, y: r.maxY))
-            p.move(to: CGPoint(x: x - h, y: r.minY + h)); p.addLine(to: CGPoint(x: x, y: r.minY)); p.addLine(to: CGPoint(x: x + h, y: r.minY + h))
-            p.move(to: CGPoint(x: x - h, y: r.maxY - h)); p.addLine(to: CGPoint(x: x, y: r.maxY)); p.addLine(to: CGPoint(x: x + h, y: r.maxY - h))
+    var body: some View {
+        SwiftUI.Canvas { ctx, size in
+            let s = size.width / 20
+            let ink = GraphicsContext.Shading.color(Color(hex: 0x05040B))
+            let line = StrokeStyle(lineWidth: 1.6 * s, lineCap: .round, lineJoin: .round)
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * s, y: y * s) }
+
+            // The figure, drawn in its own 10 × 10 box and placed above or beside the arrow.
+            let (fx, fy): (CGFloat, CGFloat) = horizontal ? (5, 0.5) : (0.5, 5)
+            func f(_ x: CGFloat, _ y: CGFloat) -> CGPoint { p(fx + x, fy + y) }
+            var fig = SwiftUI.Path()
+            fig.move(to: f(5.4, 3.6)); fig.addLine(to: f(4.6, 6.4)); fig.addLine(to: f(3.0, 9.2))
+            fig.move(to: f(4.6, 6.4)); fig.addLine(to: f(6.5, 7.5)); fig.addLine(to: f(7.0, 9.4))
+            fig.move(to: f(2.8, 5.4)); fig.addLine(to: f(5.4, 3.6)); fig.addLine(to: f(6.9, 5.4)); fig.addLine(to: f(8.4, 6.0))
+            ctx.stroke(fig, with: ink, style: line)
+            let head = f(5.9, 1.4)
+            ctx.fill(SwiftUI.Path(ellipseIn: CGRect(x: head.x - 1.3 * s, y: head.y - 1.3 * s, width: 2.6 * s, height: 2.6 * s)), with: ink)
+
+            // The arrow.
+            var arrow = SwiftUI.Path()
+            let h: CGFloat = 2.4
+            if horizontal {
+                let y: CGFloat = 15.5
+                arrow.move(to: p(2.5, y)); arrow.addLine(to: p(17.5, y))
+                arrow.move(to: p(2.5 + h, y - h)); arrow.addLine(to: p(2.5, y)); arrow.addLine(to: p(2.5 + h, y + h))
+                arrow.move(to: p(17.5 - h, y - h)); arrow.addLine(to: p(17.5, y)); arrow.addLine(to: p(17.5 - h, y + h))
+            } else {
+                let x: CGFloat = 15.5
+                arrow.move(to: p(x, 2.5)); arrow.addLine(to: p(x, 17.5))
+                arrow.move(to: p(x - h, 2.5 + h)); arrow.addLine(to: p(x, 2.5)); arrow.addLine(to: p(x + h, 2.5 + h))
+                arrow.move(to: p(x - h, 17.5 - h)); arrow.addLine(to: p(x, 17.5)); arrow.addLine(to: p(x + h, 17.5 - h))
+            }
+            ctx.stroke(arrow, with: ink, style: line)
         }
-        return p
     }
 }
 

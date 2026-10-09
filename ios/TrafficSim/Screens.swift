@@ -499,7 +499,7 @@ struct HelpScreen: View {
             PixelSection(title: "Run the signals", color: Pixel.cyan) {
                 bullet("The buttons beside each waiting line control those cars. Tap one to turn it green; tap again to send it through yellow to red.")
                 RowDivider()
-                bullet("Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal: the ↔ or ↕ shows which way they cross, and the button's colour matches the edges of its crosswalks on the map.")
+                bullet("Arrows show where those cars go: straight (with right turns) or left. Walking-figure buttons give people a Walk signal; the ↔ or ↕ shows which way they cross the road.")
                 RowDivider()
                 bullet("Two conflicting greens cause crashes. Each driver decides for themselves whether to run a yellow, so let the box clear before switching the cross street.")
             }
