@@ -65,6 +65,7 @@ public final class CornerMonitor {
         public var level = "ok"
         public var busiest = false
         public var emergency = false
+        public init() {}
     }
 
     public private(set) var corners: [Direction: Corner] = [:]

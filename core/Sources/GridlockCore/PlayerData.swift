@@ -40,7 +40,11 @@ public struct PlayerData {
         public init() {}
     }
 
-    public struct Best { public var score: Double; public var cpm: Double }
+    public struct Best {
+        public var score: Double
+        public var cpm: Double
+        public init(score: Double, cpm: Double) { self.score = score; self.cpm = cpm }
+    }
 
     public static let densityNames = ["Quiet", "Quiet", "Light", "Light", "Normal", "Normal", "Heavy", "Heavy", "Gridlock", "Gridlock"]
     public static func densityName(_ d: Int) -> String { "\(densityNames[max(1, min(10, d)) - 1]) (\(d))" }

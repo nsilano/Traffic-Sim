@@ -106,8 +106,8 @@ public final class Simulation {
     /// Freeplay bests are filed under the lightest density a run was played at.
     public internal(set) var bestDensity = 0
     let rng: Random
-    /// Settings that change the rules: emergencies on, and screen shake.
-    let shakeOn: Bool
+    /// Settings → Screen shake.
+    public var shakeOn: Bool
 
     public var mode = Mode.intro
     public internal(set) var t = 0.0
