@@ -20,7 +20,7 @@ public struct PlayerData {
     /// The switches in Settings, in order (as SETTINGS in game.js).
     public static let settingsList: [SettingInfo] = [
         SettingInfo(key: "signals", group: "Gameplay", name: "Turn signals", hint: "Blinkers on cars that could go more than one way", on: true),
-        SettingInfo(key: "counts", group: "Gameplay", name: "Waiting counts", hint: "How many wait at each corner, and for how long", on: true),
+        SettingInfo(key: "counts", group: "Gameplay", name: "Wait timers", hint: "The longest wait at each corner, beside its button", on: true),
         SettingInfo(key: "busiest", group: "Gameplay", name: "Busiest marker", hint: "Star and outline on the corner that needs you most", on: true),
         SettingInfo(key: "emergency", group: "Gameplay", name: "Emergency vehicles", hint: "Ambulances, fire engines and police in shifts", on: true),
         SettingInfo(key: "bigButtons", group: "Display", name: "Big buttons", hint: "Larger signal buttons when the map has room", on: false),
