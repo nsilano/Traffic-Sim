@@ -199,6 +199,26 @@ public struct Geometry {
 
     public func hasLeg(_ k: Direction) -> Bool { legRight(k) > 0 || legLeft(k) > 0 }
 
+    /// The outline of the road leg that traffic heading k arrives over, in k's frame
+    /// (+u along the heading, +v to the driver's right), as game.js legDims().
+    public struct Leg { public let far, near, R, L0, L1, mh, m0, m1: Double }
+
+    public func legDims(_ k: Direction) -> Leg {
+        let near = -ext(k).near
+        let o = k.opposite
+        return Leg(far: -(World.half + World.pad), near: near, R: legRight(k), L0: legLeft(k),
+                   L1: out[o]! > 0 ? mh(k) + Double(out[o]!) * World.laneWidth : 0, mh: mh(k),
+                   m0: near - mergeStart, m1: near - mergeStart - mergeLength)
+    }
+
+    /// Approach lanes shared by more than one move (say straight and right): only there
+    /// does a turn signal tell the player anything.
+    public var sharedLanes: Set<String> {
+        var moves: [String: Set<Character>] = [:]
+        for p in paths { moves[p.laneKey, default: []].insert(p.move) }
+        return Set(moves.filter { $0.value.count > 1 }.keys)
+    }
+
     // MARK: Paths
 
     private func buildPath(_ k: Direction, _ i: Int, _ move: Character) -> Path? {

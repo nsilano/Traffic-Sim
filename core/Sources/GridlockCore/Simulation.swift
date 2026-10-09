@@ -841,15 +841,9 @@ public final class Simulation {
 
     // MARK: Pedestrians
 
-    /// The road leg traffic heading k arrives over, as game.js legDims(): its far end, the
-    /// width to the right (R) and to the left by the box (L0) and past any lane drop (L1),
-    /// and where the lane-drop taper starts and ends (m0, m1).
     func legDims(_ k: Direction) -> (far: Double, R: Double, L0: Double, L1: Double, m0: Double, m1: Double) {
-        let g = geometry
-        let near = -g.ext(k).near
-        let o = k.opposite
-        let L1 = g.out[o]! > 0 ? g.mh(k) + Double(g.out[o]!) * World.laneWidth : 0
-        return (-(World.half + World.pad), g.legRight(k), g.legLeft(k), L1, near - g.mergeStart, near - g.mergeStart - g.mergeLength)
+        let l = geometry.legDims(k)
+        return (l.far, l.R, l.L0, l.L1, l.m0, l.m1)
     }
 
     func arrivalRoute(crosswalk: Int, dir: Double, du: Double, start: Double, back: Double) -> Pedestrian.Route {

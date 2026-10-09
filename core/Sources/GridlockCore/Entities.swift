@@ -104,6 +104,9 @@ public final class Car {
     var honked = false
     public internal(set) var emergency: EmergencyKind?
 
+    /// The driver's normal top speed (brake lights show below half of it).
+    public var topSpeed: Double { maxV }
+
     init(id: Int, path: Path, rng: Random) {
         // The order of draws matches makeCar() in game.js exactly.
         self.id = id
@@ -156,6 +159,9 @@ public final class Pedestrian {
     var sideTo: Double?
     var hit = false
     var honked = false
+
+    /// Where across the road this person stands while waiting at the corner.
+    public var waitV: Double { start - dir * back }
 
     /// The walk in from off the board to the waiting spot at the corner.
     public struct Route {
@@ -214,6 +220,8 @@ public struct Particle {
     public var color = ""
     public var rot: Double?
     var spin = 0.0
+
+    public var velocity: Vec { Vec(vx, vy) }
 }
 
 public struct Flash {
