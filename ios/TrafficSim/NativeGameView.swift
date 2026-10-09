@@ -185,6 +185,8 @@ struct GlyphShape: Shape {
 
 struct SignalButton: View {
     @ObservedObject var game: NativeGame
+    /// Observed so the button redraws when its light changes (the game only publishes through the session).
+    @ObservedObject var session: BoardSession
     let group: Int
     let dir: Direction
     let size: CGFloat
@@ -268,6 +270,7 @@ struct Triangle: Shape {
 /// and the waiting monitor.
 struct SignalSet: View {
     @ObservedObject var game: NativeGame
+    @ObservedObject var session: BoardSession
     let head: ControlLayout.Head
     let fit: BoardFit
 
@@ -295,9 +298,9 @@ struct SignalSet: View {
         let groups = head.carGroups + head.walkGroups
         let buttons = Group {
             if fit.column {
-                VStack(spacing: 5) { ForEach(groups, id: \.self) { SignalButton(game: game, group: $0, dir: head.dir, size: fit.button) } }
+                VStack(spacing: 5) { ForEach(groups, id: \.self) { SignalButton(game: game, session: session, group: $0, dir: head.dir, size: fit.button) } }
             } else {
-                HStack(spacing: 5) { ForEach(groups, id: \.self) { SignalButton(game: game, group: $0, dir: head.dir, size: fit.button) } }
+                HStack(spacing: 5) { ForEach(groups, id: \.self) { SignalButton(game: game, session: session, group: $0, dir: head.dir, size: fit.button) } }
             }
         }
         .padding(4)
@@ -353,7 +356,7 @@ struct NativeGameView: View {
                             ForEach(layout.heads, id: \.dir) { head in
                                 let x = (head.anchor.x - (World.cx - fit.viewW / 2)) / fit.viewW * Double(board.width)
                                 let y = head.anchor.y / World.height * Double(board.height)
-                                SignalSet(game: game, head: head, fit: fit)
+                                SignalSet(game: game, session: session, head: head, fit: fit)
                                     .layoutValue(key: AnchorLayout.Anchor.self, value: (CGPoint(x: x, y: y), head.extendsRight, head.extendsDown))
                             }
                         }
