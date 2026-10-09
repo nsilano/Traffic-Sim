@@ -44,4 +44,5 @@ seeds and scripted players before it replaces anything.
 | 1a–1c | done (build 16) |
 | 1d | done (build 17); Game Center needs the App Store Connect setup in ios/README.md |
 | 2a | built: `core/` package, levels shared as JSON, geometry checked against the JS game |
-| 2b–2e | not started |
+| 2b | done: the simulation in `core/` plays seven seeded shifts identically to the JS game, second by second (Core run 2) |
+| 2c–2e | not started |
