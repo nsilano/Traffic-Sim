@@ -45,4 +45,5 @@ seeds and scripted players before it replaces anything.
 | 1d | done (build 17); Game Center needs the App Store Connect setup in ios/README.md |
 | 2a | built: `core/` package, levels shared as JSON, geometry checked against the JS game |
 | 2b | done: the simulation in `core/` plays seven seeded shifts identically to the JS game, second by second (Core run 2) |
-| 2c–2e | not started |
+| 2c | done: `GridlockRender` draws the board with Core Graphics; CI snapshots match the JS game's own renders level by level (fetched from the `ci-snapshots` branch) |
+| 2d–2e | not started |
