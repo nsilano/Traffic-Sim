@@ -81,3 +81,71 @@ final class SimulationTests: XCTestCase {
         }
     }
 }
+
+/// Saved data, controls and monitors.
+final class PlayerDataTests: XCTestCase {
+    func testReadsTheJavaScriptGamesSaves() {
+        let data = PlayerData(strings: [
+            PlayerData.progressKey: #"{"unlocked":3,"best":{"0":61.5},"stars":{"0":[true,false,true],"9":[true,true,true]},"scores":{"0":420,"1":"x"}}"#,
+            PlayerData.settingsKey: #"{"sound":false,"bogus":true}"#,
+            PlayerData.freeplayKey: #"{"map":4,"density":7,"flow":"wild","rush":false,"peds":true,"night":false,"emergency":true}"#,
+            PlayerData.bestsKey: #"{"2-5":{"score":900,"cpm":12.4},"bad":5}"#,
+        ])
+        XCTAssertEqual(data.unlocked, 3)
+        XCTAssertEqual(data.bestTimes[0], 61.5)
+        XCTAssertEqual(data.stars[0], [true, false, true])
+        XCTAssertNil(data.stars[9], "levels that don't exist are ignored")
+        XCTAssertEqual(data.scores[0], 420)
+        XCTAssertNil(data.scores[1])
+        XCTAssertFalse(data.setting("sound"))
+        XCTAssertTrue(data.setting("haptics"))
+        XCTAssertEqual(data.freeplay.map, 4)
+        XCTAssertEqual(data.freeplay.flow, "wild")
+        XCTAssertTrue(data.freeplay.night, "old saves without 'day' start at night")
+        XCTAssertEqual(data.bests["2-5"]?.score, 900)
+        XCTAssertNil(data.bests["bad"])
+        XCTAssertEqual(data.totalStars, 2)
+
+        // And it reads back what it writes.
+        let again = PlayerData(strings: data.strings)
+        XCTAssertEqual(again.unlocked, 3)
+        XCTAssertEqual(again.stars[0], [true, false, true])
+        XCTAssertEqual(again.freeplay, data.freeplay)
+        XCTAssertEqual(again.bests["2-5"]?.cpm, 12.4)
+    }
+
+    func testRecordWin() {
+        var data = PlayerData()
+        let first = data.recordWin(level: 0, time: 80, stars: [true, false, true], score: 300)
+        XCTAssertTrue(first.newBest)
+        XCTAssertEqual(data.unlocked, 2)
+        let second = data.recordWin(level: 0, time: 70, stars: [true, true, false], score: 200)
+        XCTAssertFalse(second.newBest)
+        XCTAssertEqual(second.previous, 300)
+        XCTAssertEqual(data.stars[0], [true, true, true])
+        XCTAssertEqual(data.bestTimes[0], 70)
+    }
+
+    func testControlsAndMonitor() {
+        for i in 0..<Level.all.count {
+            let sim = Simulation(levelIndex: i, rng: Random(seed: 5))
+            let layout = ControlLayout(simulation: sim)
+            let carGroups = Set(layout.heads.flatMap(\.carGroups))
+            let walkGroups = Set(layout.heads.flatMap(\.walkGroups))
+            XCTAssertEqual(carGroups.count + walkGroups.count, sim.groups.count, "level \(i + 1): every group has a button")
+            sim.mode = .running
+            let monitor = CornerMonitor()
+            for _ in 0..<(40 * 60) { sim.step(1.0 / 60); monitor.update(sim, layout) }
+            XCTAssertFalse(monitor.corners.isEmpty)
+        }
+    }
+
+    func testLiveDensity() {
+        let sim = Simulation(levelIndex: 2, level: Level.freeplay(map: 2, density: 5, rush: true, peds: true, night: true),
+                             freeplay: Simulation.Freeplay(map: 2, density: 5, flow: "lively"), rng: Random(seed: 9))
+        sim.setDensity(9)
+        XCTAssertEqual(sim.freeplay?.density, 9)
+        sim.setDensity(3)
+        XCTAssertEqual(sim.bestKey, "2-3")
+    }
+}

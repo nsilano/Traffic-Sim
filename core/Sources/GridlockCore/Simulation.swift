@@ -100,9 +100,11 @@ public final class Simulation {
     }
 
     public let levelIndex: Int
-    public let level: Level
+    public internal(set) var level: Level
     public let geometry: Geometry
-    public let freeplay: Freeplay?
+    public internal(set) var freeplay: Freeplay?
+    /// Freeplay bests are filed under the lightest density a run was played at.
+    public internal(set) var bestDensity = 0
     let rng: Random
     /// Settings that change the rules: emergencies on, and screen shake.
     let shakeOn: Bool
@@ -181,9 +183,31 @@ public final class Simulation {
                     cap: (1 + st.tide) * (1 + st.bunch) * Swift.max(1, st.surge))
         emergencyOn = freeplay != nil ? emergencies : levelIndex >= 2 && emergencies
         nextEmergency = rng.between(Self.emergencyFirst)
+        bestDensity = freeplay?.density ?? 0
     }
 
     var hasLimits: Bool { freeplay == nil }
+
+    /// Freeplay: change the traffic density mid-run (the slider under the map).
+    public func setDensity(_ density: Int) {
+        guard var f = freeplay else { return }
+        f.density = density
+        freeplay = f
+        let fresh = Level.freeplay(map: f.map, density: density, rush: level.rush, peds: (level.basePeds ?? 0) > 0, night: level.night ?? false)
+        level.rate = fresh.rate
+        level.peds = (level.basePeds ?? 0) * Swift.min(2, Level.densityFactor(density))
+        // New arrival timers so the new rate takes effect straight away.
+        for k in Direction.allCases where !geometry.lanes[k]!.isEmpty { spawners[k]?.timer = rng.exponential(mean: 1 / laneRateCap(k)) }
+        for i in pedSpawners.indices {
+            pedSpawners[i].timer = (level.peds ?? 0) > 0 ? rng.exponential(mean: 1 / ((level.peds ?? 0) * flow.cap)) : 6
+        }
+        bestDensity = Swift.min(bestDensity, density)
+    }
+
+    /// The freeplay best this run is filed under.
+    public var bestKey: String? {
+        freeplay.map { PlayerData.bestKey(map: $0.map, density: bestDensity, flow: $0.flow) }
+    }
 
     // MARK: Signals
 
