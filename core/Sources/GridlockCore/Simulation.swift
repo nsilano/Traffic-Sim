@@ -120,6 +120,8 @@ public final class Simulation {
     public internal(set) var streak = 0
     public internal(set) var mult = 1.0
     public internal(set) var waitSum = 0.0
+    /// Paths near each right turn, for right on red (see rightOnRedConflicts).
+    var rightOnRedCache: [ObjectIdentifier: Set<ObjectIdentifier>] = [:]
     public internal(set) var worstWait = 0.0
     public internal(set) var groups: [SignalGroup]
     var flow: Flow
@@ -482,6 +484,10 @@ public final class Simulation {
         var mistakeLanes = Set<String>()
         for c in cars where c.hold > 0 && c.holdKind.map({ Self.mistakeKinds.contains($0) }) == true { mistakeLanes.insert(c.path.laneKey) }
 
+        // Drivers turning right on red who are on their way round the corner.
+        for c in cars where c.rtor && c.s - c.len > c.path.exitStart + 40 { c.rtor = false }
+        let turningOnRed = cars.filter(\.rtor)
+
         for c in cars {
             let p = c.path
             if c.racing && c.s > p.exitStart { c.racing = false }
@@ -566,12 +572,19 @@ public final class Simulation {
             let gi = p.group
             if c.s <= p.stopS {
                 let d = p.stopS - c.s
-                var hold = false
+                var hold = false, onRed = false
                 let g = groups[gi]
                 if g.light == .red {
                     hold = c.commit != g.cycle
                     if !hold && c.v < 2 { hold = true; c.commit = -1; c.racing = false }
                     if !hold && c.racing && (c.v * c.v) / (2 * Self.hardBrake) <= d { hold = true; c.racing = false }
+                    // Right on red: after a full stop at the line, a driver turning right goes
+                    // when nobody is crossing and no traffic that could reach them is coming.
+                    // They keep checking until they're over the line.
+                    if hold && p.move == "R" && d < 4 && (c.rtor || (c.v < 1 && c.stoppedFor > 1)) && rightOnRedClear(c) {
+                        hold = false
+                        onRed = true
+                    }
                 } else if g.light == .yellow && c.commit != g.cycle {
                     let tooClose = (c.v * c.v) / (2 * Self.hardBrake) > d
                     if tooClose && c.v >= Self.minCommitSpeed {
@@ -588,8 +601,16 @@ public final class Simulation {
                         hold = true
                     }
                 }
+                // Never pull out across a driver turning right on red (anyone who can still stop).
+                if !hold && !turningOnRed.isEmpty && (c.v * c.v) / (2 * Self.hardBrake) <= d {
+                    for o in turningOnRed where o !== c && rightOnRedConflicts(o.path).contains(ObjectIdentifier(p)) {
+                        hold = true
+                        break
+                    }
+                }
                 if !hold && !wrecks.isEmpty && wreckOnPath(c) { hold = true }
                 if !hold && c.commit != groups[gi].cycle && exitBlocked(c, byBox[p.boxKey] ?? []) { hold = true }
+                c.rtor = onRed && !hold
                 if hold {
                     mustStop = true
                     vMax = Swift.min(vMax, (2 * Self.brake * d).squareRoot())
@@ -717,6 +738,57 @@ public final class Simulation {
             if eo > 0 && eo - o.len < c.len + 6 && o.v < 15 { return true }
         }
         return false
+    }
+
+    /// Every path that comes near a right turn on its way round the corner, or ends up in
+    /// the same lane: worked out once per path.
+    func rightOnRedConflicts(_ p: Path) -> Set<ObjectIdentifier> {
+        if let known = rightOnRedCache[ObjectIdentifier(p)] { return known }
+        func sample(_ q: Path) -> [Vec] {
+            var pts: [Vec] = []
+            var s = q.A - 6
+            while s <= q.exitStart + 40 {
+                pts.append(q.point(at: s).position)
+                s += 3
+            }
+            return pts
+        }
+        let mine = sample(p)
+        var set = Set<ObjectIdentifier>()
+        for q in geometry.paths where q !== p && q.laneKey != p.laneKey {
+            if q.exitKey == p.exitKey { set.insert(ObjectIdentifier(q)); continue }
+            let theirs = sample(q)
+            if mine.contains(where: { a in theirs.contains { a.distance(to: $0) < World.conflictDistance + 3 } }) {
+                set.insert(ObjectIdentifier(q))
+            }
+        }
+        rightOnRedCache[ObjectIdentifier(p)] = set
+        return set
+    }
+
+    /// Whether a driver can turn right on red now: nobody crossing (or allowed to start) at
+    /// the crosswalks on the way round, nothing in the box on a path that comes near theirs,
+    /// and nothing coming on one that could get there before they're round.
+    func rightOnRedClear(_ c: Car) -> Bool {
+        let p = c.path
+        for x in p.crossings {
+            let cw = geometry.crosswalks[x.crosswalk]
+            if groups[cw.group].light != .red { return false }
+            if peds.contains(where: { $0.crosswalk == x.crosswalk && $0.state == .crossing }) { return false }
+        }
+        let others = rightOnRedConflicts(p)
+        for o in cars where o !== c && others.contains(ObjectIdentifier(o.path)) {
+            let q = o.path
+            if o.s > q.stopS + 0.5 {
+                if o.s - o.len < q.exitStart + 40 { return false }
+                continue
+            }
+            let og = groups[q.group]
+            if og.light == .red && o.commit != og.cycle && !o.racing && !o.rtor { continue }
+            let d = q.stopS - o.s
+            if d < 40 || d < Swift.max(o.v, 20) * 4.5 { return false }
+        }
+        return true
     }
 
     func wreckOnPath(_ c: Car) -> Bool {

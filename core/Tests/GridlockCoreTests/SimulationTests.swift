@@ -163,6 +163,25 @@ final class PlayerDataTests: XCTestCase {
         XCTAssertGreaterThan(queued, 0, "the test needs a queue")
     }
 
+    /// With every light red, drivers turning right still go after a full stop, one at a time
+    /// when it's clear, and never hit anyone.
+    func testRightOnRed() {
+        for level in 0..<Level.all.count {
+            let sim = Simulation(levelIndex: level, rng: Random(seed: 11))
+            sim.mode = .running
+            var turned = Set<Int>()
+            for _ in 0..<(90 * 60) {
+                sim.step(1.0 / 60)
+                for c in sim.cars where c.rtor && c.s > c.path.stopS {
+                    XCTAssertEqual(c.path.move, "R", "level \(level + 1): only right turns go on red")
+                    turned.insert(c.id)
+                }
+            }
+            XCTAssertGreaterThan(turned.count, 0, "level \(level + 1): drivers turn right on red")
+            XCTAssertEqual(sim.crashes, 0, "level \(level + 1): no crashes from right on red")
+        }
+    }
+
     /// People who cross walk on along the sidewalk and off the map, rather than vanishing.
     func testPedestriansWalkOff() {
         let sim = Simulation(levelIndex: 2, rng: Random(seed: 4))

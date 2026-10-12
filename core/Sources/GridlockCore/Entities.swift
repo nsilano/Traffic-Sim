@@ -86,6 +86,8 @@ public final class Car {
     /// Speeds up to beat a yellow; `racing` while doing it.
     public internal(set) var beater: Bool
     public internal(set) var racing = false
+    /// Turning right on red: cleared to go at the line, or on the way round the corner.
+    public internal(set) var rtor = false
     var nerve: Double
     /// "distracted", "stall" or "tailgate", or nil.
     var habit: String?
