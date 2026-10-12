@@ -741,7 +741,7 @@
       // How readily this driver runs a yellow, 0 (never) to 1.
       nerve: beater ? 1 : between(NERVE[type]),
       habit, bumped: false,
-      wait: 0, lightWait: 0, commit: -1, decided: -1,
+      wait: 0, lightWait: 0, rtor: false, commit: -1, decided: -1,
       hold: 0, holdKind: null, stoppedFor: 0, starting: false,
     };
   }
@@ -816,6 +816,10 @@
     // Lanes held up by a driver's own mistake: nobody there loses patience.
     const mistakeLanes = new Set();
     for (const c of state.cars) if (c.hold > 0 && MISTAKE_KINDS.has(c.holdKind)) mistakeLanes.add(c.path.laneKey);
+
+    // Drivers turning right on red who are on their way round the corner.
+    for (const c of state.cars) if (c.rtor && c.s - c.len > c.path.exitStart + 40) c.rtor = false;
+    const turningOnRed = state.cars.filter(c => c.rtor);
 
     for (const c of state.cars) {
       const p = c.path;
@@ -910,13 +914,19 @@
       const g = state.groups[p.group];
       if (c.s <= p.stopS) {
         const d = p.stopS - c.s;
-        let hold = false;
+        let hold = false, onRed = false;
         if (g.state === 'red') {
           hold = c.commit !== g.cycle;
           // A car that committed on yellow but ended up stopped short of the
           // line (behind a wreck or a stopped car) gives up and waits for green.
           if (!hold && c.v < 2) { hold = true; c.commit = -1; c.racing = false; }
           if (!hold && c.racing && (c.v * c.v) / (2 * HARD_BRAKE) <= d) { hold = true; c.racing = false; }
+          // Right on red: after a full stop at the line, a driver turning right goes
+          // when nobody is crossing and no traffic that could reach them is coming.
+          // They keep checking until they're over the line.
+          if (hold && p.move === 'R' && d < 4 && (c.rtor || (c.v < 1 && c.stoppedFor > 1)) && rightOnRedClear(c)) {
+            hold = false; onRed = true;
+          }
         } else if (g.state === 'yellow' && c.commit !== g.cycle) {
           // Every driver makes their own call on a yellow. One too close to
           // stop goes; otherwise it depends on their nerve, how close they
@@ -934,10 +944,17 @@
             } else hold = true;
           } else hold = true;
         }
+        // Never pull out across a driver turning right on red (anyone who can still stop).
+        if (!hold && turningOnRed.length && (c.v * c.v) / (2 * HARD_BRAKE) <= d) {
+          for (const o of turningOnRed) {
+            if (o !== c && rightOnRedConflicts(o.path).has(p)) { hold = true; break; }
+          }
+        }
         // Don't enter the box when a wreck blocks the way through it, or when
         // the lane on the far side is backed up to the box.
         if (!hold && state.wrecks.length && wreckOnPath(c)) hold = true;
         if (!hold && c.commit !== g.cycle && exitBlocked(c, byBox[p.boxKey])) hold = true;
+        c.rtor = onRed && !hold;
         if (hold) {
           mustStop = true;
           vMax = Math.min(vMax, Math.sqrt(2 * BRAKE * d));
@@ -1055,6 +1072,52 @@
       if (eo > 0 && eo - o.len < c.len + 6 && o.v < 15) return true;
     }
     return false;
+  }
+
+  // Every path that comes near a right turn on its way round the corner, or ends up
+  // in the same lane: worked out once per path.
+  function rightOnRedConflicts(p) {
+    if (p.rorConflicts) return p.rorConflicts;
+    const sample = q => {
+      const pts = [];
+      for (let s = q.A - 6; s <= q.exitStart + 40; s += 3) pts.push(pointAt(q, s));
+      return pts;
+    };
+    const mine = sample(p);
+    const set = new Set();
+    for (const q of geo.paths) {
+      if (q === p || q.laneKey === p.laneKey) continue;
+      if (q.exitKey === p.exitKey) { set.add(q); continue; }
+      const theirs = sample(q);
+      if (mine.some(a => theirs.some(b => dist(a, b) < CONFLICT_DIST + 3))) set.add(q);
+    }
+    p.rorConflicts = set;
+    return set;
+  }
+
+  // Whether a driver can turn right on red now: nobody crossing (or allowed to start)
+  // at the crosswalks on the way round, nothing in the box on a path that comes near
+  // theirs, and nothing coming on one that could get there before they're round.
+  function rightOnRedClear(c) {
+    const p = c.path;
+    for (const x of p.crossings) {
+      if (state.groups[x.cw.group].state !== 'red') return false;
+      for (const ped of state.peds) if (ped.cw === x.cw && ped.state === 'crossing') return false;
+    }
+    const others = rightOnRedConflicts(p);
+    for (const o of state.cars) {
+      if (o === c || !others.has(o.path)) continue;
+      const q = o.path;
+      if (o.s > q.stopS + 0.5) {
+        if (o.s - o.len < q.exitStart + 40) return false;
+        continue;
+      }
+      const og = state.groups[q.group];
+      if (og.state === 'red' && o.commit !== og.cycle && !o.racing && !o.rtor) continue;
+      const d = q.stopS - o.s;
+      if (d < 40 || d < Math.max(o.v, 20) * 4.5) return false;
+    }
+    return true;
   }
 
   function wreckOnPath(c) {
