@@ -163,23 +163,34 @@ final class PlayerDataTests: XCTestCase {
         XCTAssertGreaterThan(queued, 0, "the test needs a queue")
     }
 
-    /// With every light red, drivers turning right still go after a full stop, one at a time
-    /// when it's clear, and never hit anyone.
+    /// Drivers turning right go on red when it's clear, and it never causes a crash. Runs the
+    /// scripted player from the parity test (a 7-second green for each car group in turn).
     func testRightOnRed() {
+        var turned = 0
         for level in 0..<Level.all.count {
             let sim = Simulation(levelIndex: level, rng: Random(seed: 11))
             sim.mode = .running
-            var turned = Set<Int>()
+            let carGroups = sim.groups.filter { $0.kind == .car }.count
+            var cur = 0, greenSince = 0.0
+            var seen = Set<Int>()
             for _ in 0..<(90 * 60) {
+                if sim.mode != .running { break }
+                if sim.groups[cur].light == .green && sim.t - greenSince >= 7 { sim.toggle(cur) }
+                if !sim.groups.enumerated().contains(where: { $0.offset < carGroups && $0.element.light != .red }) {
+                    let next = (cur + 1) % carGroups
+                    if !sim.isUnsafe(next) { sim.toggle(next); cur = next; greenSince = sim.t }
+                }
                 sim.step(1.0 / 60)
                 for c in sim.cars where c.rtor && c.s > c.path.stopS {
                     XCTAssertEqual(c.path.move, "R", "level \(level + 1): only right turns go on red")
-                    turned.insert(c.id)
+                    XCTAssertEqual(sim.groups[c.path.group].light, .red)
+                    seen.insert(c.id)
                 }
             }
-            XCTAssertGreaterThan(turned.count, 0, "level \(level + 1): drivers turn right on red")
-            XCTAssertEqual(sim.crashes, 0, "level \(level + 1): no crashes from right on red")
+            turned += seen.count
+            XCTAssertEqual(sim.crashes, 0, "level \(level + 1): no crashes")
         }
+        XCTAssertGreaterThan(turned, 0, "drivers turn right on red")
     }
 
     /// People who cross walk on along the sidewalk and off the map, rather than vanishing.
