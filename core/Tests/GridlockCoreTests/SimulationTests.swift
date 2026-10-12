@@ -181,7 +181,8 @@ final class PlayerDataTests: XCTestCase {
                     if !sim.isUnsafe(next) { sim.toggle(next); cur = next; greenSince = sim.t }
                 }
                 sim.step(1.0 / 60)
-                for c in sim.cars where c.rtor && c.s > c.path.stopS {
+                for c in sim.cars where c.rtor && c.s > c.path.stopS && !seen.contains(c.id) {
+                    // Just over the line: a right turn, on red.
                     XCTAssertEqual(c.path.move, "R", "level \(level + 1): only right turns go on red")
                     XCTAssertEqual(sim.groups[c.path.group].light, .red)
                     seen.insert(c.id)
