@@ -1,0 +1,90 @@
+# App Store screenshots: runs the app in the iPhone 6.9" and iPad 13" simulators, plays through
+# it (screenshots/UITests) and pushes the PNGs to the ci-screenshots branch. Needs no Apple
+# secrets and never uploads anything to App Store Connect.
+name: Screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/beautiful-meitner-aj6kfk]
+    paths: ['screenshots/**', '.github/workflows/screenshots.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Xcode 26 or newer
+        run: |
+          XC=$(ls -d /Applications/Xcode_2[6-9]*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+
+      - name: Prepare the game and the Xcode project
+        run: |
+          brew install xcodegen
+          python3 ios/build-game.py
+          cp screenshots/shots.yml ios/shots.yml
+          cd ios && xcodegen generate --spec shots.yml
+
+      - name: Pick the simulators
+        run: |
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
+          python3 - "$RUNNER_TEMP/devices.json" >> "$GITHUB_ENV" <<'PY'
+          import json, sys
+          devices = [d for rt, ds in json.load(open(sys.argv[1]))['devices'].items() if 'iOS' in rt for d in ds]
+          def pick(test):
+              found = [d for d in devices if test(d['name'])]
+              return sorted(found, key=lambda d: d['name'])[-1] if found else None
+          phone = pick(lambda n: n.startswith('iPhone') and 'Pro Max' in n)
+          pad = pick(lambda n: n.startswith('iPad Pro') and '13' in n)
+          print(f"PHONE={phone['udid']}\nPHONE_NAME={phone['name']}\nPAD={pad['udid']}\nPAD_NAME={pad['name']}")
+          PY
+          cat "$GITHUB_ENV"
+
+      - name: Take the screenshots
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          for kind in PHONE PAD; do
+            udid=${!kind}; name_var="${kind}_NAME"; echo "== ${!name_var}"
+            xcrun simctl boot "$udid" || true
+            xcrun simctl bootstatus "$udid" -b
+            xcrun simctl status_bar "$udid" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 \
+              --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+            set +e
+            xcodebuild test -project ios/TrafficSim.xcodeproj -scheme Shots -destination "id=$udid" \
+              -resultBundlePath "$RUNNER_TEMP/$kind.xcresult" CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/$kind.log" 2>&1
+            status=$?
+            set -e
+            grep -E "error:|failed|passed \(" "$RUNNER_TEMP/$kind.log" | tail -30
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/$kind.xcresult" --output-path "$RUNNER_TEMP/raw-$kind"
+            python3 - "$RUNNER_TEMP/raw-$kind" "$RUNNER_TEMP/out/$(echo $kind | tr A-Z a-z)" <<'PY'
+          import json, os, shutil, sys
+          src, dst = sys.argv[1], sys.argv[2]
+          os.makedirs(dst, exist_ok=True)
+          for test in json.load(open(os.path.join(src, 'manifest.json'))):
+              for a in test.get('attachments', []):
+                  name = a.get('suggestedHumanReadableName') or a['exportedFileName']
+                  base = name.split('_')[0] if name[:2].isdigit() else name
+                  shutil.copy(os.path.join(src, a['exportedFileName']), os.path.join(dst, base.rsplit('.', 1)[0] + '.png'))
+          print(sorted(os.listdir(dst)))
+          PY
+            xcrun simctl shutdown "$udid" || true
+            [ $status = 0 ] || echo "::warning::Some $kind screenshot steps failed (see the log above)"
+          done
+          sips -g pixelWidth -g pixelHeight "$RUNNER_TEMP"/out/*/*.png
+
+      - name: Publish to the ci-screenshots branch
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd "$RUNNER_TEMP/out"
+          git init -q && git checkout -q -b ci-screenshots
+          git add -A
+          git -c user.name="Screenshots CI" -c user.email="ci@users.noreply.github.com" commit -qm "App Store screenshots for $GITHUB_SHA"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-screenshots

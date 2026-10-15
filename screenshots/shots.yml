@@ -1,0 +1,27 @@
+# App Store screenshots: the app plus a UI-test target that plays through it in the simulator.
+# The Screenshots workflow copies this next to ios/project.yml and runs `xcodegen generate --spec shots.yml`
+# there, so the app target is exactly the one TestFlight builds. Nothing here is part of the app.
+include:
+  - project.yml
+targets:
+  GridlockShots:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ../screenshots/UITests
+    dependencies:
+      - target: TrafficSim
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nicsilano.trafficsim.shots
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+        TEST_TARGET_NAME: TrafficSim
+schemes:
+  Shots:
+    build:
+      targets:
+        TrafficSim: all
+        GridlockShots: [test]
+    test:
+      targets: [GridlockShots]
